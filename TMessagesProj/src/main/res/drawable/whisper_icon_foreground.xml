@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Fit the artwork within the adaptive icon viewport so launcher masks preserve the face. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:insetLeft="16.67%"
+    android:insetTop="16.67%"
+    android:insetRight="16.67%"
+    android:insetBottom="16.67%">
+    <bitmap android:src="@drawable/whisper_icon_artwork" android:gravity="fill" />
+</inset>

@@ -83,7 +83,7 @@ android {
             debuggable false
             jniDebuggable false
             signingConfig signingConfigs.debug
-            applicationIdSuffix ".beta"
+
             minifyEnabled true
             multiDexEnabled true
             shrinkResources true
@@ -95,7 +95,7 @@ android {
             debuggable false
             jniDebuggable false
             signingConfig signingConfigs.debug
-            applicationIdSuffix ".beta"
+
             minifyEnabled true
             multiDexEnabled true
             shrinkResources true
@@ -107,7 +107,7 @@ android {
             debuggable false
             jniDebuggable false
             signingConfig signingConfigs.debug
-            applicationIdSuffix ".beta"
+
             minifyEnabled true
             multiDexEnabled true
             shrinkResources true
