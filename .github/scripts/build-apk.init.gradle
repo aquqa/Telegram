@@ -1,0 +1,50 @@
+// CI configuration shared by Debug and Release; source namespaces stay unchanged.
+def buildType = System.getenv('BUILD_TYPE') ?: 'debug'
+if (!(buildType in ['debug', 'release'])) {
+    throw new GradleException('BUILD_TYPE must be debug or release')
+}
+
+gradle.beforeProject { project ->
+    if (project.path in [':TMessagesProj', ':TMessagesProj_App']) {
+        def plugin = project.path == ':TMessagesProj' ? 'com.android.library' : 'com.android.application'
+        project.pluginManager.withPlugin(plugin) {
+            project.extensions.getByName('androidComponents').finalizeDsl { android ->
+                // Select the ABI through the DSL, without IDE/test-only build flags.
+                android.defaultConfig.ndk.abiFilters.clear()
+                android.defaultConfig.ndk.abiFilters.add('arm64-v8a')
+                android.productFlavors.each { flavor ->
+                    flavor.ndk.abiFilters.clear()
+                    flavor.ndk.abiFilters.add('arm64-v8a')
+                }
+                if (project.path == ':TMessagesProj_App') {
+                    android.packaging.jniLibs.excludes.addAll([
+                        '**/armeabi-v7a/**', '**/x86/**', '**/x86_64/**'
+                    ])
+                    if (buildType == 'release') {
+                        def required = ['RELEASE_KEYSTORE_PATH', 'RELEASE_STORE_PASSWORD',
+                                        'RELEASE_KEY_ALIAS', 'RELEASE_KEY_PASSWORD']
+                        required.each { name ->
+                            if (!System.getenv(name)) {
+                                throw new GradleException("Missing release signing environment variable: ${name}")
+                            }
+                        }
+                        def signing = android.signingConfigs.getByName('release')
+                        signing.storeFile = new File(System.getenv('RELEASE_KEYSTORE_PATH'))
+                        signing.storePassword = System.getenv('RELEASE_STORE_PASSWORD')
+                        signing.keyAlias = System.getenv('RELEASE_KEY_ALIAS')
+                        signing.keyPassword = System.getenv('RELEASE_KEY_PASSWORD')
+                    }
+                }
+            }
+            if (project.path == ':TMessagesProj_App') {
+                // No Firebase registration exists for the custom package yet.
+                // Keep these tasks in the graph so AGP's resource providers resolve.
+                project.tasks.matching {
+                    it.name in ['processAfatDebugGoogleServices', 'processAfatReleaseGoogleServices']
+                }.configureEach {
+                    enabled = false
+                }
+            }
+        }
+    }
+}
