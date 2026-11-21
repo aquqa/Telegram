@@ -11,6 +11,9 @@ import android.graphics.Paint;
 import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.StateListDrawable;
+import android.os.Build;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
 import android.util.TypedValue;
 import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
@@ -23,7 +26,10 @@ import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
+import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.FileLog;
 import org.telegram.messenger.R;
+import org.telegram.ui.Components.RetroSlotMachineSounds.Cue;
 
 import java.util.Random;
 
@@ -35,6 +41,7 @@ final class RetroSlotMachineView extends FrameLayout {
     private static final int REEL_INTERVAL_MS = 155;
     private static final int FIRST_STOP_MS = 540;
     private static final int SPIN_MS = FIRST_STOP_MS + 2 * REEL_INTERVAL_MS;
+    private static final long X_PULSE_MS = 30;
 
     private static final int NIGHT = 0xff100d25;
     private static final int INK = 0xff1c1538;
@@ -64,6 +71,7 @@ final class RetroSlotMachineView extends FrameLayout {
     private final Paint letters = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Random random = new Random();
     private final LockScreenXGesture gesture = new LockScreenXGesture();
+    private final RetroSlotMachineSounds sounds = new RetroSlotMachineSounds();
     private final Runnable unlock;
     private final Button spinButton;
     private final int touchSlop;
@@ -72,6 +80,7 @@ final class RetroSlotMachineView extends FrameLayout {
     private final int[] result = new int[3];
 
     private ValueAnimator spin;
+    private int stoppedReels;
     private int coins = INITIAL_COINS;
     private int lastWin;
     private int message = R.string.WhisperSlotReady;
@@ -96,6 +105,7 @@ final class RetroSlotMachineView extends FrameLayout {
         spinButton.setLetterSpacing(.1f);
         spinButton.setPadding(0, 0, 0, 0);
         spinButton.setStateListAnimator(null);
+        spinButton.setSoundEffectsEnabled(false);
         spinButton.setBackground(buttonBackground());
         spinButton.setOnClickListener(v -> play());
         addView(spinButton, new LayoutParams(0, 0));
@@ -124,17 +134,37 @@ final class RetroSlotMachineView extends FrameLayout {
 
     void setActive(boolean active) {
         this.active = active;
-        if (!active) {
+        if (active) {
+            if (isAttachedToWindow()) sounds.preload(getContext());
+        } else {
             gesture.reset();
+            sounds.release();
             if (spin != null) spin.end();
         }
         updateDisplay();
     }
 
     @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        if (active) sounds.preload(getContext());
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        setActive(false);
+        super.onDetachedFromWindow();
+    }
+
+    @Override
     public void onWindowFocusChanged(boolean hasWindowFocus) {
         super.onWindowFocusChanged(hasWindowFocus);
-        if (!hasWindowFocus) gesture.reset();
+        if (!hasWindowFocus) {
+            gesture.reset();
+            sounds.release();
+        } else if (active) {
+            sounds.preload(getContext());
+        }
     }
 
     private void play() {
@@ -142,10 +172,12 @@ final class RetroSlotMachineView extends FrameLayout {
         gesture.reset();
         if (coins == 0) {
             startSession();
+            playSound(Cue.SPIN, 1.12f);
             return;
         }
         coins--;
         lastWin = 0;
+        stoppedReels = 0;
         message = R.string.WhisperSlotRolling;
         for (int i = 0; i < result.length; ++i) {
             result[i] = random.nextInt(SPRITES.length);
@@ -156,10 +188,19 @@ final class RetroSlotMachineView extends FrameLayout {
         spin.setInterpolator(new LinearInterpolator());
         spin.addUpdateListener(animator -> {
             int time = (int) animator.getAnimatedValue();
+            int stopped = 0;
             for (int i = 0; i < reels.length; ++i) {
-                reels[i] = time >= FIRST_STOP_MS + i * REEL_INTERVAL_MS
-                        ? result[i] : (rolling[i] + time / 65) % SPRITES.length;
+                if (time >= FIRST_STOP_MS + i * REEL_INTERVAL_MS) {
+                    reels[i] = result[i];
+                    stopped++;
+                } else {
+                    reels[i] = (rolling[i] + time / 65) % SPRITES.length;
+                }
             }
+            if (stopped > stoppedReels && stopped < reels.length) {
+                playSound(Cue.STOP, 1f + .12f * (stopped - 1));
+            }
+            stoppedReels = stopped;
             invalidate();
         });
         spin.addListener(new AnimatorListenerAdapter() {
@@ -170,6 +211,7 @@ final class RetroSlotMachineView extends FrameLayout {
             }
         });
         updateDisplay();
+        playSound(Cue.SPIN, 1f);
         spin.start();
     }
 
@@ -186,7 +228,12 @@ final class RetroSlotMachineView extends FrameLayout {
         }
         coins += lastWin;
         updateDisplay();
+        playSound(lastWin > 0 ? Cue.WIN : Cue.MISS, lastWin >= 10 ? 1.14f : 1f);
         if (active && hasWindowFocus()) announceForAccessibility(displaySummary());
+    }
+
+    private void playSound(Cue cue, float rate) {
+        if (active && hasWindowFocus()) sounds.play(cue, rate);
     }
 
     private String displaySummary() {
@@ -233,14 +280,33 @@ final class RetroSlotMachineView extends FrameLayout {
                 break;
         }
         boolean handled = super.dispatchTouchEvent(event);
-        if (completed > 0 && hasWindowFocus()) {
-            performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+        if (completed > 0) {
+            vibrateForGesture();
             if (completed == 3) {
                 setActive(false);
                 unlock.run();
             }
         }
         return handled;
+    }
+
+    @SuppressWarnings("deprecation")
+    private void vibrateForGesture() {
+        try {
+            Vibrator vibrator = AndroidUtilities.getVibrator();
+            if (vibrator != null && vibrator.hasVibrator()) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    int strength = vibrator.hasAmplitudeControl() ? 110 : VibrationEffect.DEFAULT_AMPLITUDE;
+                    vibrator.vibrate(VibrationEffect.createOneShot(X_PULSE_MS, strength));
+                } else {
+                    vibrator.vibrate(X_PULSE_MS);
+                }
+                return;
+            }
+        } catch (RuntimeException e) {
+            FileLog.e(e);
+        }
+        performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
     }
 
     @Override
