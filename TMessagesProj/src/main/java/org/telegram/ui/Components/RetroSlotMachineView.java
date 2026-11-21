@@ -42,6 +42,8 @@ final class RetroSlotMachineView extends FrameLayout {
     private static final int FIRST_STOP_MS = 540;
     private static final int SPIN_MS = FIRST_STOP_MS + 2 * REEL_INTERVAL_MS;
     private static final long X_PULSE_MS = 30;
+    // The lock view releases its sounds as soon as the unlock starts.
+    private static final long FINAL_CUE_DELAY_MS = 110;
 
     private static final int NIGHT = 0xff100d25;
     private static final int INK = 0xff1c1538;
@@ -73,6 +75,7 @@ final class RetroSlotMachineView extends FrameLayout {
     private final LockScreenXGesture gesture = new LockScreenXGesture();
     private final RetroSlotMachineSounds sounds = new RetroSlotMachineSounds();
     private final Runnable unlock;
+    private final Runnable unlockAfterCue = this::completeUnlock;
     private final Button spinButton;
     private final int touchSlop;
     private final int[] reels = {0, 1, 5};
@@ -85,6 +88,7 @@ final class RetroSlotMachineView extends FrameLayout {
     private int lastWin;
     private int message = R.string.WhisperSlotReady;
     private boolean active;
+    private boolean unlockPending;
     private float downX, downY;
     private boolean dragging;
     private float scale, left, top;
@@ -138,6 +142,7 @@ final class RetroSlotMachineView extends FrameLayout {
             if (isAttachedToWindow()) sounds.preload(getContext());
         } else {
             gesture.reset();
+            cancelPendingUnlock();
             sounds.release();
             if (spin != null) spin.end();
         }
@@ -162,13 +167,17 @@ final class RetroSlotMachineView extends FrameLayout {
         if (!hasWindowFocus) {
             gesture.reset();
             sounds.release();
+            if (unlockPending) {
+                cancelPendingUnlock();
+                updateDisplay();
+            }
         } else if (active) {
             sounds.preload(getContext());
         }
     }
 
     private void play() {
-        if (!active || spin != null) return;
+        if (!active || unlockPending || spin != null) return;
         gesture.reset();
         if (coins == 0) {
             startSession();
@@ -233,7 +242,7 @@ final class RetroSlotMachineView extends FrameLayout {
     }
 
     private void playSound(Cue cue, float rate) {
-        if (active && hasWindowFocus()) sounds.play(cue, rate);
+        if (active && !unlockPending && hasWindowFocus()) sounds.play(cue, rate);
     }
 
     private String displaySummary() {
@@ -241,7 +250,7 @@ final class RetroSlotMachineView extends FrameLayout {
     }
 
     private void updateDisplay() {
-        spinButton.setEnabled(active && spin == null);
+        spinButton.setEnabled(active && !unlockPending && spin == null);
         int label = coins == 0 && spin == null ? R.string.WhisperSlotNewGame : R.string.WhisperSlotSpin;
         spinButton.setText(label);
         spinButton.setContentDescription(getResources().getString(label) + ". " + displaySummary());
@@ -250,6 +259,7 @@ final class RetroSlotMachineView extends FrameLayout {
 
     @Override
     public boolean dispatchTouchEvent(MotionEvent event) {
+        if (unlockPending) return true;
         if (!active || !onFilterTouchEventForSecurity(event)) {
             gesture.reset();
             return true;
@@ -270,7 +280,7 @@ final class RetroSlotMachineView extends FrameLayout {
                 dragging |= Math.abs(event.getX() - downX) > touchSlop || Math.abs(event.getY() - downY) > touchSlop;
                 break;
             case MotionEvent.ACTION_UP:
-                float minimumSpan = Math.max(dp(24), Math.min(getWidth(), getHeight()) * .09f);
+                float minimumSpan = Math.max(dp(20), Math.min(getWidth(), getHeight()) * .075f);
                 completed = gesture.end(event.getX(), event.getY(), event.getEventTime(), minimumSpan);
                 break;
             case MotionEvent.ACTION_POINTER_DOWN:
@@ -281,13 +291,28 @@ final class RetroSlotMachineView extends FrameLayout {
         }
         boolean handled = super.dispatchTouchEvent(event);
         if (completed > 0) {
+            sounds.play(Cue.GESTURE, 1f);
             vibrateForGesture();
             if (completed == 3) {
-                setActive(false);
-                unlock.run();
+                unlockPending = true;
+                updateDisplay();
+                postDelayed(unlockAfterCue, FINAL_CUE_DELAY_MS);
             }
         }
         return handled;
+    }
+
+    private void completeUnlock() {
+        if (!active || !unlockPending) return;
+        setActive(false);
+        unlock.run();
+    }
+
+    private void cancelPendingUnlock() {
+        if (unlockPending) {
+            unlockPending = false;
+            removeCallbacks(unlockAfterCue);
+        }
     }
 
     @SuppressWarnings("deprecation")

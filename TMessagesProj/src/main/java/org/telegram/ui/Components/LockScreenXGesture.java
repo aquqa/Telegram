@@ -2,9 +2,12 @@ package org.telegram.ui.Components;
 
 /** Recognizes one X as two crossing diagonal strokes, in either order and direction. */
 final class LockScreenXGesture {
-    private static final long MAX_STROKE_MS = 2500;
-    private static final long MAX_STROKE_GAP_MS = 2000;
-    private static final long MAX_X_GAP_MS = 4500;
+    private static final long MAX_STROKE_MS = 2700;
+    private static final long MAX_STROKE_GAP_MS = 2200;
+    private static final long MAX_X_GAP_MS = 4900;
+    private static final float MAX_STROKE_ASPECT = 2.45f;
+    private static final float MAX_STROKE_PATH_RATIO = 1.30f;
+    private static final float MIN_CROSS_FRACTION = .14f;
 
     private float startX, startY, endX, endY, length;
     private long startedAt;
@@ -42,8 +45,8 @@ final class LockScreenXGesture {
         float sx = Math.abs(dx);
         float sy = Math.abs(dy);
         if (time - startedAt > MAX_STROKE_MS || Math.min(sx, sy) < minimumSpan
-                || Math.max(sx, sy) > 2.2f * Math.min(sx, sy)
-                || length > 1.26f * Math.hypot(dx, dy)) {
+                || Math.max(sx, sy) > MAX_STROKE_ASPECT * Math.min(sx, sy)
+                || length > MAX_STROKE_PATH_RATIO * Math.hypot(dx, dy)) {
             reset();
             return 0;
         }
@@ -84,8 +87,8 @@ final class LockScreenXGesture {
             float ay = other.y - y;
             float firstPosition = cross(ax, ay, other.dx, other.dy) / determinant;
             float secondPosition = cross(ax, ay, dx, dy) / determinant;
-            return firstPosition >= .18f && firstPosition <= .82f
-                    && secondPosition >= .18f && secondPosition <= .82f;
+            return firstPosition >= MIN_CROSS_FRACTION && firstPosition <= 1f - MIN_CROSS_FRACTION
+                    && secondPosition >= MIN_CROSS_FRACTION && secondPosition <= 1f - MIN_CROSS_FRACTION;
         }
 
         private static float cross(float ax, float ay, float bx, float by) {

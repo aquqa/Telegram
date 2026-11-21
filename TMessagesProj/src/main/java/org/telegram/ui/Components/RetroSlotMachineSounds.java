@@ -14,7 +14,8 @@ final class RetroSlotMachineSounds {
         SPIN(R.raw.whisper_slots_spin),
         STOP(R.raw.whisper_slots_stop),
         WIN(R.raw.whisper_slots_win),
-        MISS(R.raw.whisper_slots_miss);
+        MISS(R.raw.whisper_slots_miss),
+        GESTURE(R.raw.whisper_slots_gesture);
 
         final int resource;
 
