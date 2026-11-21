@@ -91,16 +91,18 @@ import me.vkryl.core.reference.ReferenceList;
 
 public class PasscodeView extends FrameLayout implements NotificationCenter.NotificationCenterDelegate {
     private final static float BACKGROUND_SPRING_STIFFNESS = 300f;
+    private RetroSlotMachineView slotMachine;
 
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
-        if (id == NotificationCenter.didGenerateFingerprintKeyPair) {
+        if (id == NotificationCenter.didGenerateFingerprintKeyPair && !isAppLock()) {
             checkFingerprintButton();
             if ((boolean) args[0] && SharedConfig.appLocked) {
                 checkFingerprint();
             }
         } else if (id == NotificationCenter.passcodeDismissed && isAppLock()) {
             if (args[0] != this) {
+                onPause();
                 setVisibility(GONE);
                 onHidden();
             }
@@ -1093,7 +1095,7 @@ public class PasscodeView extends FrameLayout implements NotificationCenter.Noti
     }
 
     protected void processDone(boolean fingerprint) {
-        if (dismissing || getVisibility() != VISIBLE) return;
+        if (isAppLock() || dismissing || getVisibility() != VISIBLE) return;
         if (!fingerprint) {
             if (SharedConfig.passcodeRetryInMs > 0) {
                 return;
@@ -1122,6 +1124,11 @@ public class PasscodeView extends FrameLayout implements NotificationCenter.Noti
                 return;
             }
         }
+        acceptUnlock();
+    }
+
+    private void acceptUnlock() {
+        if (dismissing || getVisibility() != VISIBLE) return;
         dismissing = true;
         onPause();
         SharedConfig.badPasscodeTries = 0;
@@ -1166,7 +1173,7 @@ public class PasscodeView extends FrameLayout implements NotificationCenter.Noti
             imageAnimator.cancel();
             imageAnimator = null;
         }
-        if (accepted) {
+        if (accepted && slotMachine == null) {
             imageView.getAnimatedDrawable().setCustomEndFrame(71);
             imageView.getAnimatedDrawable().setCurrentFrame(37, false);
             imageView.playAnimation();
@@ -1269,6 +1276,12 @@ public class PasscodeView extends FrameLayout implements NotificationCenter.Noti
     int resumeCount = 0;
     public void onResume() {
         if (dismissing) return;
+        if (isAppLock()) {
+            if (slotMachine != null && getVisibility() == VISIBLE) {
+                slotMachine.setActive(true);
+            }
+            return;
+        }
         checkRetryTextView();
         if (retryTextView.getVisibility() != VISIBLE) {
             if (SharedConfig.passcodeType == SharedConfig.PASSCODE_TYPE_PASSWORD) {
@@ -1297,6 +1310,7 @@ public class PasscodeView extends FrameLayout implements NotificationCenter.Noti
 
     public void onPause() {
         AndroidUtilities.cancelRunOnUIThread(checkRunnable);
+        if (slotMachine != null) slotMachine.setActive(false);
     }
 
     private KeyboardNotifier keyboardNotifier;
@@ -1309,7 +1323,7 @@ public class PasscodeView extends FrameLayout implements NotificationCenter.Noti
             NotificationCenter.getGlobalInstance().addWeakObserver(this, NotificationCenter.passcodeDismissed);
         }
 
-        if (keyboardNotifier == null && getParent() instanceof View) {
+        if (!isAppLock() && keyboardNotifier == null && getParent() instanceof View) {
             keyboardNotifier = new KeyboardNotifier((View) getParent(), keyboardHeight -> {
                 if (getContext() == null) return;
                 final boolean landscape = getContext().getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE;
@@ -1380,7 +1394,7 @@ public class PasscodeView extends FrameLayout implements NotificationCenter.Noti
     }
 
     protected void checkFingerprint() {
-        if (dismissing) return;
+        if (isAppLock() || dismissing) return;
         if (Build.VERSION.SDK_INT < 23) {
             return;
         }
@@ -1451,6 +1465,10 @@ public class PasscodeView extends FrameLayout implements NotificationCenter.Noti
     }
 
     public void onShow(boolean fingerprint, boolean animated, int x, int y, Runnable onShow, Runnable onStart) {
+        if (isAppLock()) {
+            showSlotMachine(onShow, onStart);
+            return;
+        }
         if (getVisibility() != VISIBLE) dismissing = false;
         checkFingerprintButton();
         checkRetryTextView();
@@ -1711,12 +1729,44 @@ public class PasscodeView extends FrameLayout implements NotificationCenter.Noti
         setOnTouchListener((v, event) -> true);
     }
 
+    private void showSlotMachine(Runnable onShow, Runnable onStart) {
+        if (getVisibility() == VISIBLE) return;
+        dismissing = false;
+        if (slotMachine == null) {
+            for (int i = 0; i < getChildCount(); ++i) {
+                getChildAt(i).setVisibility(GONE);
+            }
+            slotMachine = new RetroSlotMachineView(getContext(), () -> {
+                if (SharedConfig.appLocked && slotMachine.isShown()) acceptUnlock();
+            });
+            addView(slotMachine, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+        }
+
+        Activity activity = AndroidUtilities.findActivity(getContext());
+        if (activity != null && activity.getCurrentFocus() != null) {
+            View focused = activity.getCurrentFocus();
+            AndroidUtilities.hideKeyboard(focused);
+            focused.clearFocus();
+        }
+        slotMachine.startSession();
+        setTranslationY(0);
+        setAlpha(1f);
+        setVisibility(VISIBLE);
+        if (onStart != null) onStart.run();
+        onAnimationUpdate(shownT = 1f);
+        if (onShow != null) onShow.run();
+    }
+
     private void showFingerprintError(CharSequence error) {
         BotWebViewVibrationEffect.NOTIFICATION_ERROR.vibrate();
     }
 
     @Override
     protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+        if (slotMachine != null) {
+            super.onMeasure(widthMeasureSpec, heightMeasureSpec);
+            return;
+        }
         int width = MeasureSpec.getSize(widthMeasureSpec);
         int height = AndroidUtilities.displaySize.y - (Build.VERSION.SDK_INT >= 21 ? 0 : AndroidUtilities.statusBarHeight);
         if (!isAppLock()) height = MeasureSpec.getSize(heightMeasureSpec);
@@ -1834,6 +1884,10 @@ public class PasscodeView extends FrameLayout implements NotificationCenter.Noti
 
     @Override
     protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
+        if (slotMachine != null) {
+            super.onLayout(changed, left, top, right, bottom);
+            return;
+        }
         View rootView = getRootView();
         int usableViewHeight = rootView.getHeight() - AndroidUtilities.statusBarHeight - AndroidUtilities.getViewInset(rootView);
         getWindowVisibleDisplayFrame(rect);
