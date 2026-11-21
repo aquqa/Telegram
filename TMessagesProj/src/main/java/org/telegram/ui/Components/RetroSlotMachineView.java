@@ -12,8 +12,6 @@ import android.graphics.Typeface;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.StateListDrawable;
 import android.os.Build;
-import android.os.VibrationEffect;
-import android.os.Vibrator;
 import android.util.TypedValue;
 import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
@@ -26,8 +24,6 @@ import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 
-import org.telegram.messenger.AndroidUtilities;
-import org.telegram.messenger.FileLog;
 import org.telegram.messenger.R;
 import org.telegram.ui.Components.RetroSlotMachineSounds.Cue;
 
@@ -41,7 +37,6 @@ final class RetroSlotMachineView extends FrameLayout {
     private static final int REEL_INTERVAL_MS = 155;
     private static final int FIRST_STOP_MS = 540;
     private static final int SPIN_MS = FIRST_STOP_MS + 2 * REEL_INTERVAL_MS;
-    private static final long X_PULSE_MS = 30;
     // The lock view releases its sounds as soon as the unlock starts.
     private static final long FINAL_CUE_DELAY_MS = 110;
 
@@ -315,23 +310,12 @@ final class RetroSlotMachineView extends FrameLayout {
         }
     }
 
-    @SuppressWarnings("deprecation")
     private void vibrateForGesture() {
-        try {
-            Vibrator vibrator = AndroidUtilities.getVibrator();
-            if (vibrator != null && vibrator.hasVibrator()) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    int strength = vibrator.hasAmplitudeControl() ? 110 : VibrationEffect.DEFAULT_AMPLITUDE;
-                    vibrator.vibrate(VibrationEffect.createOneShot(X_PULSE_MS, strength));
-                } else {
-                    vibrator.vibrate(X_PULSE_MS);
-                }
-                return;
-            }
-        } catch (RuntimeException e) {
-            FileLog.e(e);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+                && performHapticFeedback(HapticFeedbackConstants.CONFIRM)) {
+            return;
         }
-        performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP);
+        performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
     }
 
     @Override
