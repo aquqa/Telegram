@@ -1,17 +1,20 @@
 package org.telegram.ui.Components;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
+import static org.telegram.ui.Components.RetroSlotArt.*;
 
 import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.ColorFilter;
+import android.graphics.LinearGradient;
 import android.graphics.Paint;
 import android.graphics.PixelFormat;
+import android.graphics.RadialGradient;
 import android.graphics.Rect;
 import android.graphics.RectF;
-import android.graphics.Typeface;
+import android.graphics.Shader;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.os.PowerManager;
@@ -35,18 +38,12 @@ import java.util.Arrays;
 import java.util.Random;
 
 /**
- * Full-screen arcade cabinet shown while the local app lock is active. Everything is
- * drawn on a 284 x 372 pixel board that is scaled up to fit the screen.
+ * Full-screen vintage slot machine shown while the local app lock is active. The cabinet
+ * is drawn on a board of {@link RetroSlotArt#BOARD_WIDTH} units scaled to fit the screen.
  */
 final class RetroSlotMachineView extends FrameLayout {
-    private static final int BOARD_WIDTH = 284;
-    private static final int BOARD_HEIGHT = 372;
     private static final int INITIAL_COINS = 20;
     private static final int MAX_COINS = 9999;
-    private static final int PAIR_PAY = 2;
-    // Three of a kind, by symbol: cherries, coin, bolt, heart, gem, seven.
-    private static final int[] TRIPLE_PAYS = {5, 8, 10, 12, 15, 30};
-    private static final String[] PAY_LABELS = {"\u00d75", "\u00d78", "\u00d710", "\u00d712", "\u00d715", "\u00d730"};
 
     private static final long FIRST_STOP_MS = 760;
     private static final long REEL_GAP_MS = 250;
@@ -65,77 +62,36 @@ final class RetroSlotMachineView extends FrameLayout {
     // The lock view releases its sounds as soon as the unlock starts.
     private static final long FINAL_CUE_DELAY_MS = 110;
 
-    private static final int NIGHT = 0xff100d25;
-    private static final int SHADOW = 0xff08061a;
-    private static final int DARK = 0xff0b0718;
-    private static final int INK = 0xff1c1538;
-    private static final int PANEL = 0xff38244f;
-    private static final int PURPLE = 0xff65427c;
-    private static final int LILAC = 0xff8a63a3;
+    private static final int ROOM = 0xff0c0a10;
     private static final int GOLD = 0xffffd36b;
-    private static final int AMBER = 0xffc9803c;
-    private static final int MINT = 0xff85f6cb;
-    private static final int CREAM = 0xffffedce;
-    private static final int PINK = 0xffff7db4;
-    private static final int LED = 0xffff5a5f;
-    private static final int LED_OFF = 0xff3b1830;
-    private static final int CHROME = 0xffe4def0;
-    private static final int STEEL = 0xff9c94b3;
-    private static final int KNOB = 0xffe23c5a;
-    private static final int KNOB_DARK = 0xff8e1f3c;
+    private static final int CYAN = 0xff48e1ff;
+    private static final int ROSE = 0xffff6b6b;
 
-    // Each symbol is a 9x9 sprite with its own three-color palette.
-    private static final String[][] SPRITES = {
-            {".....22..", "....233..", "...222...", "..22.2...", ".111.111.", "113111311", "111111111", "111.1111.", ".11..11.."},
-            {"..22222..", ".2333332.", "233111332", "231313132", "231313132", "231313132", "233111332", ".2333332.", "..22222.."},
-            {".....33..", "....331..", "...331...", "..331....", ".3333332.", "...331...", "..331....", ".331.....", ".1......."},
-            {".111.111.", "133313331", "133333331", "133333331", ".1333331.", "..13331..", "...131...", "....1....", "........."},
-            {"...333...", "..33222..", ".3322211.", "333222111", ".3322211.", "..32111..", "...211...", "....1....", "........."},
-            {".........", ".3333333.", ".3111131.", ".....331.", "....331..", "...331...", "..331....", "..31.....", "........."}
-    };
-    private static final int[][] PALETTES = {
-            {0xffd04066, 0xff42876d, 0xffff9bb1}, {0xffc2724c, 0xffa8534b, GOLD},
-            {0xffe98741, 0xffb75a4a, GOLD}, {0xffb7447c, 0xffe15f91, PINK},
-            {0xff4297bc, 0xff60dcca, 0xffc2ffe5}, {0xffa43560, 0xffc85a86, 0xffff5680}
-    };
     // Every strip holds each symbol once, so every symbol stays equally likely.
-    private static final int[][] STRIPS = {{0, 3, 1, 4, 2, 5}, {2, 0, 5, 3, 1, 4}, {1, 5, 0, 2, 4, 3}};
-    private static final int[] START_SYMBOLS = {0, 1, 5};
+    private static final int[][] STRIPS = {
+            {CHERRY, BELL, LEMON, BAR, PLUM, SEVEN},
+            {PLUM, CHERRY, SEVEN, BELL, LEMON, BAR},
+            {LEMON, SEVEN, CHERRY, PLUM, BAR, BELL}
+    };
+    private static final int[] START_SYMBOLS = {CHERRY, BELL, SEVEN};
+    private static final String[] DIGITS = {"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"};
+    // Soft lights of the arcade around the cabinet: x, y, radius as fractions of the room.
+    private static final float[][] ROOM_LIGHTS = {
+            {.1f, .12f, .38f}, {.9f, .08f, .32f}, {.04f, .6f, .3f}, {.96f, .52f, .34f},
+            {.18f, .96f, .32f}, {.86f, .94f, .28f}, {.5f, 0, .42f}
+    };
+    private static final int[] ROOM_COLORS = {0x40ff3fd0, 0x3048e1ff, 0x38ffb347, 0x2c2f7cf6, 0x2cff3b30, 0x30ffb347, 0x1cffe0a0};
 
-    private static final float REEL_LEFT = 23;
-    private static final float REEL_STEP = 72;
-    private static final float REEL_WIDTH = 66;
-    private static final float REEL_TOP = 126;
-    private static final float REEL_BOTTOM = 216;
-    private static final float PAYLINE = 171;
-    private static final float SYMBOL_SIZE = 40.5f;
-    private static final float SYMBOL_PITCH = 46;
-    private static final float DRUM_RADIUS = 60;
-    private static final int[] DRUM_SHADES = {0x78, 0x58, 0x3c, 0x24, 0x10};
-
-    private static final float PIVOT_X = 266;
-    private static final float PIVOT_Y = 172;
-    private static final float LEVER_LENGTH = 66;
-    private static final float KNOB_RADIUS = 9;
     // A pull must stay close to vertical: an X stroke is at least 0.41 wide per unit of height.
     private static final float LEVER_MAX_SLANT = .35f;
 
-    private static final float TRAY_CENTER = 128;
-    private static final float TRAY_TOP = 338;
-    private static final float TRAY_FLOOR = 353;
     private static final float GRAVITY = 900;
     private static final int MAX_DROPS = 24;
-    private static final int[] PILE_ROWS = {18, 15, 12, 9};
+    private static final int[] PILE_ROWS = {9, 7, 5, 3};
     private static final int PILE_CAP;
     private static final float[] SLOT_X;
     private static final float[] SLOT_Y;
     private static final int[] SLOT_ROW;
-
-    private static final int BULBS_ACROSS = 25;
-    private static final int BULBS_DOWN = 5;
-    private static final int BULB_COUNT = 2 * (BULBS_ACROSS + BULBS_DOWN);
-    private static final float[] BULB_X = new float[BULB_COUNT];
-    private static final float[] BULB_Y = new float[BULB_COUNT];
 
     static {
         // Coins pile into a mound: low and central slots fill first.
@@ -145,8 +101,8 @@ final class RetroSlotMachineView extends FrameLayout {
         int k = 0;
         for (int row = 0; row < PILE_ROWS.length; ++row) {
             for (int j = 0; j < PILE_ROWS[row]; ++j) {
-                float x = TRAY_CENTER + (j - (PILE_ROWS[row] - 1) / 2f) * 9;
-                slots[k++] = new float[] {row * 4.5f + Math.abs(x - TRAY_CENTER) * .5f, x, row};
+                float x = TRAY_CENTER + (j - (PILE_ROWS[row] - 1) / 2f) * COIN_WIDTH;
+                slots[k++] = new float[] {row * 5 + Math.abs(x - TRAY_CENTER) * .5f, x, row};
             }
         }
         Arrays.sort(slots, (a, b) -> Float.compare(a[0], b[0]));
@@ -157,34 +113,19 @@ final class RetroSlotMachineView extends FrameLayout {
         for (int i = 0; i < count; ++i) {
             SLOT_X[i] = slots[i][1];
             SLOT_ROW[i] = (int) slots[i][2];
-            SLOT_Y[i] = TRAY_FLOOR - 4 - 3 * SLOT_ROW[i];
-        }
-
-        // Marquee bulbs, clockwise from the top left corner.
-        int b = 0;
-        for (int i = 0; i < BULBS_ACROSS; ++i, ++b) {
-            BULB_X[b] = 19 + 218f * i / (BULBS_ACROSS - 1);
-            BULB_Y[b] = 16;
-        }
-        for (int i = 1; i <= BULBS_DOWN; ++i, ++b) {
-            BULB_X[b] = 237;
-            BULB_Y[b] = 16 + 56f * i / (BULBS_DOWN + 1);
-        }
-        for (int i = BULBS_ACROSS - 1; i >= 0; --i, ++b) {
-            BULB_X[b] = 19 + 218f * i / (BULBS_ACROSS - 1);
-            BULB_Y[b] = 72;
-        }
-        for (int i = BULBS_DOWN; i >= 1; --i, ++b) {
-            BULB_X[b] = 19;
-            BULB_Y[b] = 16 + 56f * i / (BULBS_DOWN + 1);
+            SLOT_Y[i] = TRAY_FLOOR - COIN_HEIGHT - 3 * SLOT_ROW[i];
         }
     }
 
-    private final Paint blocks = new Paint();
-    private final Paint letters = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint spritePaint = new Paint();
-    private final RectF spriteRect = new RectF();
-    private final Bitmap[] sprites = new Bitmap[SPRITES.length];
+    private final Paint bitmapPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+    private final Paint fillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint textPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint reelShade = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint reelGlare = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint drumShade = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint shaftPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint lipPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final RectF rect = new RectF();
     private final Random random = new Random();
     private final LockScreenXGesture gesture = new LockScreenXGesture();
     private final RetroSlotMachineSounds sounds = new RetroSlotMachineSounds();
@@ -198,6 +139,15 @@ final class RetroSlotMachineView extends FrameLayout {
     private final int touchSlop;
     private final int[] result = new int[STRIPS.length];
 
+    // Artwork, painted for the current scale.
+    private float artScale;
+    private Bitmap cabinet;
+    private final Bitmap[] symbols = new Bitmap[SYMBOL_COUNT];
+    private final Bitmap[][] bulbs = new Bitmap[BULB_COLORS.length][2];
+    private Bitmap beaconOn, beaconOff, beaconGlow, knob, hub, coin;
+    private Bitmap room;
+    private int roomWidth, roomHeight;
+
     private boolean spinning;
     private boolean tease;
     private int landed;
@@ -206,6 +156,8 @@ final class RetroSlotMachineView extends FrameLayout {
     private int lastWin;
     private int payoutLeft;
     private int winShown;
+    private float creditsShown = INITIAL_COINS;
+    private float paidShown;
     private long nextPayoutAt;
     private long winAt = -1;
     private int winMask;
@@ -240,23 +192,32 @@ final class RetroSlotMachineView extends FrameLayout {
         super(context);
         this.unlock = unlock;
         touchSlop = ViewConfiguration.get(context).getScaledTouchSlop();
-        letters.setTypeface(Typeface.create(Typeface.MONOSPACE, Typeface.BOLD));
-        letters.setTextAlign(Paint.Align.CENTER);
-        spritePaint.setFilterBitmap(false);
-        for (int i = 0; i < SPRITES.length; ++i) {
-            sprites[i] = createSprite(i);
-        }
         for (int i = 0; i < reels.length; ++i) {
             reels[i] = new RetroSlotReel(STRIPS[i], indexOf(STRIPS[i], START_SYMBOLS[i]));
         }
+        textPaint.setTypeface(CONDENSED);
+        textPaint.setTextAlign(Paint.Align.CENTER);
+        // Curved drum: the strip darkens as it turns away at the top and bottom.
+        reelShade.setShader(new LinearGradient(0, REEL_TOP, 0, REEL_BOTTOM,
+                new int[] {0xb0000000, 0x30000000, 0, 0x14ffffff, 0, 0x38000000, 0xc0000000},
+                new float[] {0, .2f, .38f, .44f, .55f, .8f, 1}, Shader.TileMode.CLAMP));
+        reelGlare.setShader(new LinearGradient(REEL_LEFT, REEL_TOP, REEL_LEFT + 3 * REEL_STEP, REEL_BOTTOM,
+                new int[] {0, 0x22ffffff, 0, 0, 0x14ffffff, 0},
+                new float[] {.12f, .2f, .28f, .62f, .68f, .74f}, Shader.TileMode.CLAMP));
+        float drumTop = METER_TOP + 11, drumBottom = METER_BOTTOM - 4;
+        drumShade.setShader(new LinearGradient(0, drumTop, 0, drumBottom,
+                new int[] {0xcc000000, 0, 0, 0xcc000000}, new float[] {0, .3f, .7f, 1}, Shader.TileMode.CLAMP));
+        shaftPaint.setShader(new LinearGradient(PIVOT_X - 4, 0, PIVOT_X + 4, 0,
+                new int[] {0xff4b4f57, 0xfff7f9fb, 0xffc5cad2, 0xff5c6069}, new float[] {0, .3f, .6f, 1}, Shader.TileMode.CLAMP));
+        lipPaint.setShader(new LinearGradient(0, TRAY_FLOOR - 2, 0, TRAY_FLOOR + 7,
+                new int[] {0xfff7f9fb, 0xff9ea4ad, 0xffe3e6ea, 0xff5c6069}, new float[] {0, .35f, .6f, 1}, Shader.TileMode.CLAMP));
         setWillNotDraw(false);
-        setBackgroundColor(NIGHT);
         setFilterTouchesWhenObscured(true);
 
         spinButton = new ArcadeButton(context);
-        spinButton.setTypeface(Typeface.create(Typeface.MONOSPACE, Typeface.BOLD));
-        spinButton.setTextColor(INK);
-        spinButton.setLetterSpacing(.1f);
+        spinButton.setTypeface(CONDENSED);
+        spinButton.setLetterSpacing(.12f);
+        spinButton.setShadowLayer(2, 0, 1, 0xaa3a0000);
         spinButton.setPadding(0, 0, 0, 0);
         spinButton.setStateListAnimator(null);
         spinButton.setSoundEffectsEnabled(false);
@@ -264,18 +225,6 @@ final class RetroSlotMachineView extends FrameLayout {
         spinButton.setOnClickListener(v -> play(false));
         addView(spinButton, new LayoutParams(0, 0));
         updateDisplay();
-    }
-
-    private static Bitmap createSprite(int symbol) {
-        String[] sprite = SPRITES[symbol];
-        Bitmap bitmap = Bitmap.createBitmap(sprite[0].length(), sprite.length, Bitmap.Config.ARGB_8888);
-        for (int y = 0; y < sprite.length; ++y) {
-            for (int x = 0; x < sprite[y].length(); ++x) {
-                int color = sprite[y].charAt(x) - '1';
-                bitmap.setPixel(x, y, color >= 0 ? PALETTES[symbol][color] : 0);
-            }
-        }
-        return bitmap;
     }
 
     private static int indexOf(int[] strip, int symbol) {
@@ -288,6 +237,8 @@ final class RetroSlotMachineView extends FrameLayout {
     void startSession() {
         setActive(false);
         resetGame();
+        creditsShown = coins;
+        paidShown = 0;
         setActive(true);
     }
 
@@ -329,6 +280,8 @@ final class RetroSlotMachineView extends FrameLayout {
         settlePayout();
         pile = Math.min(PILE_CAP, pile + drops);
         drops = 0;
+        creditsShown = coins;
+        paidShown = winShown;
         lever.reset();
         leverGrabbed = leverEngaged = false;
     }
@@ -401,7 +354,7 @@ final class RetroSlotMachineView extends FrameLayout {
         message = R.string.WhisperSlotRolling;
         messageAt = now;
         for (int i = 0; i < result.length; ++i) {
-            result[i] = random.nextInt(SPRITES.length);
+            result[i] = random.nextInt(SYMBOL_COUNT);
         }
         tease = result[0] == result[1];
         spinning = true;
@@ -502,6 +455,20 @@ final class RetroSlotMachineView extends FrameLayout {
             if (payoutLeft == 0) updateDisplay();
         }
         stepDrops(dt);
+        if (motion) {
+            creditsShown = approach(creditsShown, coins, dt);
+            paidShown = approach(paidShown, winShown, dt);
+        } else {
+            creditsShown = coins;
+            paidShown = winShown;
+        }
+    }
+
+    /** Turns a counter toward its value, faster when it has far to go. */
+    private static float approach(float shown, int target, float dt) {
+        float distance = target - shown;
+        float step = Math.max(16, Math.abs(distance) * 5) * dt;
+        return Math.abs(distance) <= step ? target : shown + Math.signum(distance) * step;
     }
 
     private void dropCoin() {
@@ -559,7 +526,9 @@ final class RetroSlotMachineView extends FrameLayout {
     }
 
     private void updateDisplay() {
-        spinButton.setEnabled(active && !unlockPending && !spinning);
+        boolean enabled = active && !unlockPending && !spinning;
+        spinButton.setEnabled(enabled);
+        spinButton.setTextColor(enabled ? 0xfffff4e0 : 0xffb89a92);
         int label = totalCoins() == 0 && !spinning ? R.string.WhisperSlotNewGame : R.string.WhisperSlotSpin;
         spinButton.setText(label);
         spinButton.setContentDescription(getResources().getString(label) + ". " + displaySummary());
@@ -605,7 +574,9 @@ final class RetroSlotMachineView extends FrameLayout {
 
     private boolean isBusy(long now) {
         return spinning || now < settleUntil || payoutLeft > 0 || drops > 0
-                || (!lever.isAtRest() && !lever.isHeld());
+                || (!lever.isAtRest() && !lever.isHeld())
+                || creditsShown != coins || paidShown != winShown
+                || (jackpot && isShowingWin(now) && lightsAnimate());
     }
 
     private boolean lightsAnimate() {
@@ -729,9 +700,13 @@ final class RetroSlotMachineView extends FrameLayout {
 
     private boolean isOverKnob(float x, float y) {
         float reach = Math.max(KNOB_RADIUS + 10, dp(26) / scale);
-        float bx = (x - left) / scale - PIVOT_X;
+        float bx = (x - left) / scale - knobX();
         float by = (y - top) / scale - knobY();
         return bx * bx + by * by <= reach * reach;
+    }
+
+    private float knobX() {
+        return PIVOT_X + LEVER_TILT * (float) Math.cos(lever.angle());
     }
 
     private float knobY() {
@@ -778,19 +753,20 @@ final class RetroSlotMachineView extends FrameLayout {
         float spaceWidth = width - insets.left - insets.right;
         float spaceHeight = height - insets.top - insets.bottom;
         scale = Math.max(.1f, Math.min((spaceWidth - dp(24)) / BOARD_WIDTH, (spaceHeight - dp(24)) / BOARD_HEIGHT));
-        left = insets.left + (spaceWidth - BOARD_WIDTH * scale) / 2;
-        top = insets.top + (spaceHeight - BOARD_HEIGHT * scale) / 2;
+        // Whole pixels keep the painted cabinet bitmap crisp.
+        left = Math.round(insets.left + (spaceWidth - BOARD_WIDTH * scale) / 2);
+        top = Math.round(insets.top + (spaceHeight - BOARD_HEIGHT * scale) / 2);
         spinButton.unit = buttonFace.unit = scale;
-        spinButton.setTextSize(TypedValue.COMPLEX_UNIT_PX, 16 * scale);
-        spinButton.measure(MeasureSpec.makeMeasureSpec(Math.round(206 * scale), MeasureSpec.EXACTLY),
-                MeasureSpec.makeMeasureSpec(Math.round(34 * scale), MeasureSpec.EXACTLY));
+        spinButton.setTextSize(TypedValue.COMPLEX_UNIT_PX, 12.5f * scale);
+        spinButton.measure(MeasureSpec.makeMeasureSpec(Math.round(BUTTON_WIDTH * scale), MeasureSpec.EXACTLY),
+                MeasureSpec.makeMeasureSpec(Math.round(BUTTON_HEIGHT * scale), MeasureSpec.EXACTLY));
         setMeasuredDimension(width, height);
     }
 
     @Override
     protected void onLayout(boolean changed, int l, int t, int r, int b) {
-        int x = Math.round(left + 25 * scale);
-        int y = Math.round(top + 259 * scale);
+        int x = Math.round(left + BUTTON_LEFT * scale);
+        int y = Math.round(top + BUTTON_TOP * scale);
         spinButton.layout(x, y, x + spinButton.getMeasuredWidth(), y + spinButton.getMeasuredHeight());
     }
 
@@ -798,81 +774,81 @@ final class RetroSlotMachineView extends FrameLayout {
 
     // region Drawing
 
+    /** Paints the artwork once per scale; everything after that is cheap sprite work. */
+    private void ensureArt() {
+        if (cabinet != null && artScale == scale) return;
+        artScale = scale;
+        cabinet = paintCabinet(getResources(), scale);
+        int symbolSize = Math.round(SYMBOL_SIZE * scale);
+        for (int i = 0; i < SYMBOL_COUNT; ++i) {
+            symbols[i] = paintSymbol(i, symbolSize);
+        }
+        for (int i = 0; i < BULB_COLORS.length; ++i) {
+            bulbs[i][0] = paintBulb(BULB_COLORS[i], false, scale);
+            bulbs[i][1] = paintBulb(BULB_COLORS[i], true, scale);
+        }
+        beaconOn = paintBeacon(true, scale);
+        beaconOff = paintBeacon(false, scale);
+        beaconGlow = paintGlow(0xffff3b30, BEACON_GLOW, scale);
+        knob = paintSphere(KNOB_RADIUS * 1.3f, true, scale);
+        hub = paintSphere(HUB_RADIUS, false, scale);
+        coin = paintCoin(scale);
+    }
+
+    /** The dim arcade around the cabinet: soft light only, so a quarter-size bitmap stretched over the screen is enough. */
+    private void ensureRoom() {
+        int width = getWidth(), height = getHeight();
+        if ((room != null && width == roomWidth && height == roomHeight) || width == 0 || height == 0) return;
+        roomWidth = width;
+        roomHeight = height;
+        room = Bitmap.createBitmap(Math.max(1, width / 4), Math.max(1, height / 4), Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(room);
+        c.scale(room.getWidth() / (float) width, room.getHeight() / (float) height);
+        c.drawColor(ROOM);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        float size = Math.max(width, height);
+        for (int i = 0; i < ROOM_LIGHTS.length; ++i) {
+            float[] light = ROOM_LIGHTS[i];
+            p.setShader(new RadialGradient(light[0] * width, light[1] * height, light[2] * size,
+                    ROOM_COLORS[i], 0, Shader.TileMode.CLAMP));
+            c.drawCircle(light[0] * width, light[1] * height, light[2] * size, p);
+        }
+        p.setShader(new RadialGradient(width / 2f, height / 2f, (float) Math.hypot(width, height) / 2,
+                new int[] {0, 0, 0xb0000000}, new float[] {0, .5f, 1}, Shader.TileMode.CLAMP));
+        c.drawRect(0, 0, width, height, p);
+    }
+
     @Override
     protected void onDraw(Canvas canvas) {
         long now = SystemClock.uptimeMillis();
         boolean lights = lightsAnimate();
-        drawStars(canvas, now, lights);
+        ensureArt();
+        ensureRoom();
+        rect.set(0, 0, roomWidth, roomHeight);
+        canvas.drawBitmap(room, null, rect, bitmapPaint);
         canvas.save();
         canvas.translate(left, top);
+        canvas.drawBitmap(cabinet, 0, 0, bitmapPaint);
         canvas.scale(scale, scale);
-        drawCabinet(canvas);
-        drawMarquee(canvas, now, lights);
-        drawCounter(canvas, 19, 121, R.string.WhisperSlotCoins, coins, LED);
-        drawCounter(canvas, 135, 237, R.string.WhisperSlotWin, winShown, GOLD);
         drawReels(canvas, now, lights);
+        drawBulbs(canvas, now, lights);
+        drawOdometer(canvas, CREDITS_LEFT, creditsShown);
+        drawOdometer(canvas, PAID_LEFT, paidShown);
         drawMessage(canvas, now, lights);
-        // Socket the SPIN button sinks into.
-        rect(canvas, 23, 257, 233, 298, DARK);
-        rect(canvas, 23, 296, 233, 298, SHADOW);
-        drawPaytable(canvas);
-        title(canvas, getResources().getString(R.string.WhisperSlotRules), 128, 331, 7, CREAM);
         drawTray(canvas, now);
         drawLever(canvas);
+        drawBeacon(canvas, now, lights);
         canvas.restore();
     }
 
-    @Override
-    protected void dispatchDraw(Canvas canvas) {
-        super.dispatchDraw(canvas);
-        drawCrt(canvas);
-    }
-
-    private void drawStars(Canvas canvas, long now, boolean lights) {
-        long twinkle = lights ? now / 400 : 0;
-        for (int i = 0; i < 58; ++i) {
-            float x = getWidth() * ((i * 83 + 13) % 151) / 151f;
-            float y = getHeight() * ((i * 41 + 7) % 127) / 127f;
-            float size = (i % 7 == 0 ? 3 : 2) * scale;
-            int color = i % 7 == 0 ? PURPLE : PANEL;
-            if (lights && (i * 7 + twinkle) % 23 == 0) color = LILAC;
-            rect(canvas, x, y, x + size, y + size, color);
-        }
-    }
-
-    private void drawCabinet(Canvas canvas) {
-        // Stepped cabinet with a lit left edge and a shaded right edge.
-        rect(canvas, 12, 10, 250, BOARD_HEIGHT, SHADOW);
-        rect(canvas, 10, 0, 246, BOARD_HEIGHT - 7, PURPLE);
-        rect(canvas, 4, 8, 252, BOARD_HEIGHT - 15, PURPLE);
-        rect(canvas, 10, 8, 246, BOARD_HEIGHT - 15, PANEL);
-        rect(canvas, 4, 8, 6, BOARD_HEIGHT - 15, LILAC);
-        rect(canvas, 10, 0, 246, 2, LILAC);
-        rect(canvas, 250, 8, 252, BOARD_HEIGHT - 15, 0xff4c3163);
-    }
-
-    private void drawMarquee(Canvas canvas, long now, boolean lights) {
-        rect(canvas, 14, 11, 242, 77, SHADOW);
-        rect(canvas, 15, 12, 241, 76, 0xff2a1d45);
-        rect(canvas, 23, 21, 233, 67, PINK);
-        rect(canvas, 24, 22, 232, 66, INK);
-        for (int i = 0; i < BULB_COUNT; ++i) {
-            drawBulb(canvas, BULB_X[i], BULB_Y[i], isBulbLit(i, now, lights));
-        }
-        boolean flash = jackpot && lights && isShowingWin(now) && ((now - winAt) / 300) % 2 == 1;
-        title(canvas, "PIXEL SLOTS", 128, 49, 22, 0xff8f437d);
-        title(canvas, "PIXEL SLOTS", 128, 47, 22, flash ? PINK : GOLD);
-        title(canvas, getResources().getString(R.string.WhisperSlotArcade), 128, 61, 8, MINT);
-    }
-
     private boolean isBulbLit(int i, long now, boolean lights) {
-        if (!lights) return i % 2 == 0;
+        if (!lights) return true;
         if (isShowingWin(now)) {
             long since = now - winAt;
             if (jackpot) return mod(i - since / SHOW_STEP_MS, 4) < 2;
             return (i + since / BLINK_MS) % 2 == 0;
         }
-        if (spinning) return mod(i - now / 50, 5) < 2;
+        if (spinning) return mod(i - now / 60, 5) < 2;
         return mod(i - now / IDLE_STEP_MS, 3) == 0;
     }
 
@@ -881,284 +857,196 @@ final class RetroSlotMachineView extends FrameLayout {
         return m < 0 ? m + divisor : m;
     }
 
-    private void drawBulb(Canvas canvas, float x, float y, boolean lit) {
-        if (lit) {
-            rect(canvas, x - 3.5f, y - 3.5f, x + 3.5f, y + 3.5f, 0x55ffd36b);
-            rect(canvas, x - 2, y - 2, x + 2, y + 2, GOLD);
-            rect(canvas, x - 1.5f, y - 1.5f, x, y, CREAM);
-        } else {
-            rect(canvas, x - 2, y - 2, x + 2, y + 2, 0xff5a3747);
-            rect(canvas, x - 1.5f, y - 1.5f, x - .5f, y - .5f, 0xff7a5060);
+    private void drawBulbs(Canvas canvas, long now, boolean lights) {
+        for (int i = 0; i < BULB_COUNT; ++i) {
+            Bitmap bulb = bulbs[i % BULB_COLORS.length][isBulbLit(i, now, lights) ? 1 : 0];
+            drawSprite(canvas, bulb, BULB_X[i], BULB_Y[i], 2 * BULB_GLOW, 2 * BULB_GLOW, 255);
         }
     }
 
-    private void drawCounter(Canvas canvas, float left, float right, int label, int value, int color) {
-        rect(canvas, left - 1, 83, right + 1, 116, SHADOW);
-        rect(canvas, left, 84, right, 115, INK);
-        rect(canvas, left + 3, 95, right - 3, 113, DARK);
-        float center = (left + right) / 2f;
-        title(canvas, getResources().getString(label), center, 92, 7, MINT);
-        float x = center - 23;
-        for (int digit = 3, place = 1000; digit >= 0; --digit, place /= 10) {
-            int d = value / place % 10;
-            boolean lit = value >= place || place == 1;
-            drawDigit(canvas, x, 97, lit ? d : 8, lit, color);
-            x += 12;
+    private void drawBeacon(Canvas canvas, long now, boolean lights) {
+        boolean on = jackpot && isShowingWin(now);
+        if (on) {
+            // A slow pulse, like a lamp turning inside the dome.
+            float glow = lights ? .55f + .45f * (float) Math.sin(2 * Math.PI * (now - winAt) / 700.0) : 1;
+            drawSprite(canvas, beaconGlow, BEACON_X, BEACON_Y - 4, 2 * BEACON_GLOW, 2 * BEACON_GLOW, Math.round(255 * glow));
         }
-    }
-
-    private static final int[] SEGMENTS = {0x3f, 0x06, 0x5b, 0x4f, 0x66, 0x6d, 0x7d, 0x07, 0x7f, 0x6f};
-
-    /** A seven-segment digit; unlit segments still glow faintly behind the glass. */
-    private void drawDigit(Canvas canvas, float x, float y, int digit, boolean lit, int color) {
-        int mask = SEGMENTS[digit];
-        for (int s = 0; s < 7; ++s) {
-            boolean on = lit && (mask & (1 << s)) != 0;
-            float l, t, r, b;
-            switch (s) {
-                case 0: l = x + 1; t = y; r = x + 8; b = y + 2; break;
-                case 1: l = x + 7; t = y + 1; r = x + 9; b = y + 7; break;
-                case 2: l = x + 7; t = y + 7; r = x + 9; b = y + 13; break;
-                case 3: l = x + 1; t = y + 12; r = x + 8; b = y + 14; break;
-                case 4: l = x; t = y + 7; r = x + 2; b = y + 13; break;
-                case 5: l = x; t = y + 1; r = x + 2; b = y + 7; break;
-                default: l = x + 1; t = y + 6; r = x + 8; b = y + 8; break;
-            }
-            if (on) rect(canvas, l - .5f, t - .5f, r + .5f, b + .5f, color & 0x40ffffff);
-            rect(canvas, l, t, r, b, on ? color : LED_OFF);
-        }
+        rect.set(BEACON_X - BEACON_RADIUS - 1, BEACON_Y - BEACON_RADIUS - 1, BEACON_X + BEACON_RADIUS + 1, BEACON_Y);
+        canvas.drawBitmap(on ? beaconOn : beaconOff, null, rect, bitmapPaint);
     }
 
     private void drawReels(Canvas canvas, long now, boolean lights) {
-        rect(canvas, 12, 119, 244, 223, SHADOW);
-        rect(canvas, 13, 120, 243, 222, GOLD);
-        rect(canvas, 13, 120, 243, 121, CREAM);
-        rect(canvas, 16, 123, 240, 219, INK);
-        boolean blinkOn = !lights || ((now - (winAt >= 0 ? winAt : 0)) / BLINK_MS) % 2 == 0;
         boolean showing = isShowingWin(now);
+        boolean blinkOn = !lights || ((now - Math.max(0, winAt)) / BLINK_MS) % 2 == 0;
+        for (int i = 0; i < reels.length; ++i) {
+            drawReel(canvas, i, REEL_LEFT + REEL_STEP * i, now);
+        }
         for (int i = 0; i < reels.length; ++i) {
             float x = REEL_LEFT + REEL_STEP * i;
-            drawReel(canvas, i, x, now);
             if ((winMask & (1 << i)) != 0 && !spinning && (!showing || blinkOn)) {
-                outline(canvas, x + 2, PAYLINE - 25, x + REEL_WIDTH - 2, PAYLINE + 25, 2, showing ? GOLD : 0xaaffd36b);
+                glowFrame(canvas, x + 1.5f, PAYLINE - 21, x + REEL_WIDTH - 1.5f, PAYLINE + 21, showing ? GOLD : 0x99ffd36b);
             }
             boolean teasing = spinning && tease && i == reels.length - 1 && landed == reels.length - 1;
             if (teasing && (!lights || (now / BLINK_MS) % 2 == 0)) {
-                outline(canvas, x - 2, REEL_TOP - 2, x + REEL_WIDTH + 2, REEL_BOTTOM + 2, 2, MINT);
+                glowFrame(canvas, x - 2.5f, REEL_TOP - 2.5f, x + REEL_WIDTH + 2.5f, REEL_BOTTOM + 2.5f, CYAN);
             }
         }
-        // Payline painted on the glass, with arrows on both sides.
-        boolean markers = !showing || blinkOn;
-        rect(canvas, 18, PAYLINE - .5f, 238, PAYLINE + .5f, 0x66ff7db4);
-        int arrow = markers ? PINK : 0xff8f437d;
-        rect(canvas, 16, PAYLINE - 4, 18, PAYLINE + 4, arrow);
-        rect(canvas, 18, PAYLINE - 3, 20, PAYLINE + 3, arrow);
-        rect(canvas, 20, PAYLINE - 1.5f, 22, PAYLINE + 1.5f, arrow);
-        rect(canvas, 238, PAYLINE - 4, 240, PAYLINE + 4, arrow);
-        rect(canvas, 236, PAYLINE - 3, 238, PAYLINE + 3, arrow);
-        rect(canvas, 234, PAYLINE - 1.5f, 236, PAYLINE + 1.5f, arrow);
-        // Glare on the glass, in stair-stepped pixels.
-        canvas.save();
-        canvas.clipRect(16, 123, 240, 219);
-        for (int j = 0; j < 33; ++j) {
-            rect(canvas, 92 - j * 2, 123 + j * 3, 97 - j * 2, 126 + j * 3, 0x16ffffff);
-            rect(canvas, 104 - j * 2, 123 + j * 3, 106 - j * 2, 126 + j * 3, 0x10ffffff);
-        }
-        canvas.restore();
     }
 
     private void drawReel(Canvas canvas, int index, float x, long now) {
         RetroSlotReel reel = reels[index];
-        rect(canvas, x, REEL_TOP, x + REEL_WIDTH, REEL_BOTTOM, CREAM);
         canvas.save();
         canvas.clipRect(x, REEL_TOP, x + REEL_WIDTH, REEL_BOTTOM);
+        fillPaint.setColor(CREAM);
+        canvas.drawRect(x, REEL_TOP, x + REEL_WIDTH, REEL_BOTTOM, fillPaint);
         float position = reel.position(now);
         float velocity = reel.speed(now) / RetroSlotReel.SPEED;
         float blur = Math.min(1, Math.abs(velocity));
         float center = x + REEL_WIDTH / 2;
         int base = (int) Math.floor(position);
         for (int k = base - 2; k <= base + 2; ++k) {
-            // Wrap the strip around a drum: symbols squash and slide away near the edges.
+            // Wrap the strip around the drum: symbols squash and slide away near the edges.
             float angle = (position - k) * SYMBOL_PITCH / DRUM_RADIUS;
             if (Math.abs(angle) > 1.45f) continue;
             float y = PAYLINE + DRUM_RADIUS * (float) Math.sin(angle);
             float height = SYMBOL_SIZE * (float) Math.cos(angle) * (1 + .45f * blur);
-            int symbol = reel.symbolAt(k);
+            Bitmap symbol = symbols[reel.symbolAt(k)];
             if (blur > .15f) {
                 // Motion blur: fading copies trail behind the direction of travel.
-                float trail = Math.signum(velocity) * 9 * blur;
+                float trail = Math.signum(velocity) * 8 * blur;
                 for (int ghost = 3; ghost >= 1; --ghost) {
                     drawSprite(canvas, symbol, center, y - trail * ghost, SYMBOL_SIZE, height, Math.round(110 * blur / ghost));
                 }
             }
             drawSprite(canvas, symbol, center, y, SYMBOL_SIZE, height, Math.round(255 * (1 - .35f * blur)));
         }
-        // Curved drum shading: darker toward the top and bottom of the window.
-        for (int band = 0; band < DRUM_SHADES.length; ++band) {
-            int color = DRUM_SHADES[band] << 24 | (INK & 0xffffff);
-            rect(canvas, x, REEL_TOP + band * 5, x + REEL_WIDTH, REEL_TOP + band * 5 + 5, color);
-            rect(canvas, x, REEL_BOTTOM - band * 5 - 5, x + REEL_WIDTH, REEL_BOTTOM - band * 5, color);
-        }
-        rect(canvas, x, PAYLINE - 34, x + REEL_WIDTH, PAYLINE - 30, 0x1cffffff);
-        rect(canvas, x, REEL_TOP, x + 2, REEL_BOTTOM, 0x30000000);
-        rect(canvas, x + REEL_WIDTH - 2, REEL_TOP, x + REEL_WIDTH, REEL_BOTTOM, 0x30000000);
+        canvas.drawRect(x, REEL_TOP, x + REEL_WIDTH, REEL_BOTTOM, reelShade);
+        canvas.drawRect(x, REEL_TOP, x + REEL_WIDTH, REEL_BOTTOM, reelGlare);
+        fillPaint.setColor(0x38000000);
+        canvas.drawRect(x, REEL_TOP, x + 2.5f, REEL_BOTTOM, fillPaint);
+        canvas.drawRect(x + REEL_WIDTH - 2.5f, REEL_TOP, x + REEL_WIDTH, REEL_BOTTOM, fillPaint);
         canvas.restore();
     }
 
-    private void drawSprite(Canvas canvas, int symbol, float cx, float cy, float width, float height, int alpha) {
-        spriteRect.set(cx - width / 2, cy - height / 2, cx + width / 2, cy + height / 2);
-        spritePaint.setAlpha(Math.max(0, Math.min(255, alpha)));
-        canvas.drawBitmap(sprites[symbol], null, spriteRect, spritePaint);
+    private void glowFrame(Canvas canvas, float l, float t, float r, float b, int color) {
+        rect.set(l, t, r, b);
+        fillPaint.setStyle(Paint.Style.STROKE);
+        fillPaint.setStrokeWidth(4.5f);
+        fillPaint.setColor(0x50000000 | color & 0xffffff);
+        canvas.drawRoundRect(rect, 3, 3, fillPaint);
+        fillPaint.setStrokeWidth(1.6f);
+        fillPaint.setColor(color);
+        canvas.drawRoundRect(rect, 3, 3, fillPaint);
+        fillPaint.setStyle(Paint.Style.FILL);
+    }
+
+    /** Mechanical counter: each drum turns into the next digit as the one below wraps. */
+    private void drawOdometer(Canvas canvas, float left, float value) {
+        float top = METER_TOP + 11, bottom = METER_BOTTOM - 4, height = bottom - top;
+        float width = 11, gap = 1.4f;
+        float x = left + (METER_WIDTH - 4 * width - 3 * gap) / 2;
+        value = Math.max(0, Math.min(MAX_COINS, value));
+        textPaint.setStyle(Paint.Style.FILL);
+        textPaint.setTextSize(11);
+        textPaint.setColor(0xfff2efe6);
+        for (int place = 1000; place >= 1; place /= 10, x += width + gap) {
+            float turns = value / place;
+            int digit = (int) turns % 10;
+            float below = value - (float) Math.floor(turns) * place;
+            float roll = place == 1 ? turns - (float) Math.floor(turns) : Math.max(0, below - (place - 1));
+            fillPaint.setColor(0xff101013);
+            canvas.drawRect(x, top, x + width, bottom, fillPaint);
+            canvas.save();
+            canvas.clipRect(x, top, x + width, bottom);
+            float baseline = top + height / 2 + 4 - roll * height;
+            canvas.drawText(DIGITS[digit], x + width / 2, baseline, textPaint);
+            if (roll > 0) canvas.drawText(DIGITS[(digit + 1) % 10], x + width / 2, baseline + height, textPaint);
+            canvas.drawRect(x, top, x + width, bottom, drumShade);
+            canvas.restore();
+        }
     }
 
     private void drawMessage(Canvas canvas, long now, boolean lights) {
-        rect(canvas, 21, 227, 235, 253, SHADOW);
-        rect(canvas, 22, 228, 234, 252, PURPLE);
-        rect(canvas, 24, 230, 232, 250, DARK);
         int text = message;
-        int color = lastWin > 0 ? GOLD : message == R.string.WhisperSlotEmpty ? PINK : MINT;
-        boolean visible = true;
+        int color = lastWin > 0 ? GOLD : message == R.string.WhisperSlotEmpty ? ROSE : AMBER;
         if (isShowingWin(now)) {
-            visible = !lights || ((now - winAt) / BLINK_MS) % 2 == 0;
+            if (lights && ((now - winAt) / BLINK_MS) % 2 == 1) return;
         } else if (lights && !spinning && totalCoins() > 0 && (message == R.string.WhisperSlotReady
                 || message == R.string.WhisperSlotMiss || lastWin > 0)
                 && ((now - messageAt) / HINT_MS) % 2 == 1) {
             text = R.string.WhisperSlotPull;
-            color = CREAM;
+            color = 0xffffe2b8;
         }
-        if (visible) title(canvas, getResources().getString(text), 128, 244, 11, color);
-        // Dot-matrix grid over the text.
-        for (float gx = 24; gx < 232; gx += 1.5f) {
-            rect(canvas, gx + 1.1f, 230, gx + 1.5f, 250, 0xa00b0718);
-        }
-        for (float gy = 230; gy < 250; gy += 1.5f) {
-            rect(canvas, 24, gy + 1.1f, 232, gy + 1.5f, 0xa00b0718);
-        }
-    }
-
-    private void drawPaytable(Canvas canvas) {
-        rect(canvas, 14, 303, 242, 323, INK);
-        for (int i = 0; i < TRIPLE_PAYS.length; ++i) {
-            float cx = 14 + 228 * (i + .5f) / TRIPLE_PAYS.length;
-            drawSprite(canvas, i, cx - 9, 313, 10.8f, 10.8f, 255);
-            title(canvas, PAY_LABELS[i], cx + 8, 316.5f, 8, GOLD);
-        }
+        String string = getResources().getString(text);
+        float maxWidth = MESSAGE_RIGHT - MESSAGE_LEFT - 9;
+        textPaint.setTextSize(10);
+        float width = textPaint.measureText(string);
+        if (width > maxWidth) textPaint.setTextSize(10 * maxWidth / width);
+        float x = (MESSAGE_LEFT + MESSAGE_RIGHT) / 2, y = (METER_TOP + METER_BOTTOM) / 2 + 3.6f;
+        // Lamp-lit letters behind smoked glass.
+        textPaint.setStyle(Paint.Style.STROKE);
+        textPaint.setStrokeWidth(3);
+        textPaint.setColor(0x44000000 | color & 0xffffff);
+        canvas.drawText(string, x, y, textPaint);
+        textPaint.setStyle(Paint.Style.FILL);
+        textPaint.setColor(color);
+        canvas.drawText(string, x, y, textPaint);
     }
 
     private void drawTray(Canvas canvas, long now) {
-        rect(canvas, 34, TRAY_TOP - 2, 222, TRAY_FLOOR + 4, SHADOW);
-        rect(canvas, 36, TRAY_TOP, 220, TRAY_FLOOR + 2, DARK);
-        rect(canvas, 36, TRAY_TOP, 220, TRAY_TOP + 3, 0xff05030d);
-        // Payout chute.
-        rect(canvas, TRAY_CENTER - 9, TRAY_TOP, TRAY_CENTER + 9, TRAY_TOP + 4, 0xff000000);
-        rect(canvas, TRAY_CENTER - 10, TRAY_TOP - 2, TRAY_CENTER + 10, TRAY_TOP, STEEL);
         for (int row = 0; row < PILE_ROWS.length; ++row) {
             for (int i = 0; i < pile; ++i) {
-                if (SLOT_ROW[i] == row) drawPileCoin(canvas, SLOT_X[i] - 4, SLOT_Y[i]);
+                if (SLOT_ROW[i] != row) continue;
+                rect.set(SLOT_X[i] - COIN_WIDTH / 2, SLOT_Y[i], SLOT_X[i] + COIN_WIDTH / 2, SLOT_Y[i] + COIN_HEIGHT);
+                canvas.drawBitmap(coin, null, rect, bitmapPaint);
             }
         }
         for (int i = 0; i < drops; ++i) {
             // Coins tumble as they fly.
-            float width = 1.5f + 4.5f * Math.abs((float) Math.cos(now / 45.0 + i * 1.7));
-            float x = dropX[i];
-            float y = dropY[i];
-            rect(canvas, x - width / 2, y - 3, x + width / 2, y + 3, AMBER);
-            rect(canvas, x - width / 2, y - 3, x + width / 2 - .5f, y + 2, GOLD);
-            rect(canvas, x - width / 2 + .5f, y - 2.5f, x, y - 1, CREAM);
+            float flip = Math.abs((float) Math.cos(now / 45.0 + i * 1.7));
+            drawSprite(canvas, coin, dropX[i], dropY[i], COIN_WIDTH * .8f, Math.max(1.2f, COIN_WIDTH * .8f * flip), 255);
         }
-        // Front lip of the tray.
-        rect(canvas, 34, TRAY_FLOOR + 1, 222, TRAY_FLOOR + 5, STEEL);
-        rect(canvas, 34, TRAY_FLOOR + 1, 222, TRAY_FLOOR + 2, CHROME);
-    }
-
-    private void drawPileCoin(Canvas canvas, float x, float y) {
-        rect(canvas, x + 1, y, x + 7, y + 1, CREAM);
-        rect(canvas, x, y + 1, x + 8, y + 3, GOLD);
-        rect(canvas, x + 1, y + 3, x + 7, y + 4, AMBER);
+        // Rolled front lip of the tray, in front of the coins.
+        fillPaint.setColor(0x99000000);
+        canvas.drawRect(76, TRAY_FLOOR - .5f, 192, TRAY_FLOOR + 1, fillPaint);
+        rect.set(74, TRAY_FLOOR, 194, TRAY_FLOOR + 8.5f);
+        canvas.drawRoundRect(rect, 4, 4, lipPaint);
     }
 
     private void drawLever(Canvas canvas) {
-        float angle = lever.angle();
-        float knobY = knobY();
-        float depth = (float) Math.sin(angle);
-        // Bracket bolted to the side of the cabinet.
-        rect(canvas, 250, 145, 262, 201, SHADOW);
-        rect(canvas, 251, 146, 260, 198, PURPLE);
-        rect(canvas, 251, 146, 260, 148, LILAC);
-        rect(canvas, 253, 151, 256, 154, STEEL);
-        rect(canvas, 253, 190, 256, 193, STEEL);
-        // Hub.
-        circle(canvas, PIVOT_X + 1, PIVOT_Y + 1, 8, SHADOW);
-        circle(canvas, PIVOT_X, PIVOT_Y, 8, STEEL);
-        circle(canvas, PIVOT_X - 1, PIVOT_Y - 1, 6, CHROME);
-        // Shaft: wider while it points at the viewer.
-        float half = 2 + 1.2f * Math.max(0, depth);
-        float shaftTop = Math.min(PIVOT_Y, knobY);
-        float shaftBottom = Math.max(PIVOT_Y, knobY);
-        rect(canvas, PIVOT_X - half, shaftTop, PIVOT_X + half, shaftBottom, STEEL);
-        rect(canvas, PIVOT_X - half + .8f, shaftTop, PIVOT_X - half + 2, shaftBottom, CHROME);
-        rect(canvas, PIVOT_X + half - 1, shaftTop, PIVOT_X + half, shaftBottom, 0xff6c6485);
-        circle(canvas, PIVOT_X, PIVOT_Y, 3, 0xff6c6485);
-        // Ball knob, larger as it swings toward the viewer.
+        float knobX = knobX(), knobY = knobY();
+        float depth = (float) Math.sin(lever.angle());
+        drawSprite(canvas, hub, PIVOT_X, PIVOT_Y, 2 * HUB_RADIUS, 2 * HUB_RADIUS, 255);
+        // The shaft looks thicker while it points at the viewer.
+        float half = 2.2f + 1.3f * Math.max(0, depth);
+        float length = (float) Math.hypot(knobX - PIVOT_X, knobY - PIVOT_Y);
+        canvas.save();
+        canvas.rotate((float) Math.toDegrees(Math.atan2(knobX - PIVOT_X, PIVOT_Y - knobY)), PIVOT_X, PIVOT_Y);
+        fillPaint.setColor(0x40000000);
+        rect.set(PIVOT_X - half + 1.5f, PIVOT_Y - length + 1, PIVOT_X + half + 1.5f, PIVOT_Y);
+        canvas.drawRoundRect(rect, half, half, fillPaint);
+        rect.set(PIVOT_X - half, PIVOT_Y - length, PIVOT_X + half, PIVOT_Y);
+        canvas.drawRoundRect(rect, half, half, shaftPaint);
+        canvas.restore();
+        fillPaint.setColor(0xff5c6069);
+        canvas.drawCircle(PIVOT_X, PIVOT_Y, 2.6f, fillPaint);
+        // The knob grows as it swings toward the viewer.
         float radius = KNOB_RADIUS * (1 + .3f * depth);
-        circle(canvas, PIVOT_X + 1, knobY + 1.5f, radius, SHADOW);
-        circle(canvas, PIVOT_X, knobY, radius, KNOB_DARK);
-        circle(canvas, PIVOT_X - radius * .12f, knobY - radius * .12f, radius * .85f, KNOB);
-        circle(canvas, PIVOT_X - radius * .35f, knobY - radius * .35f, radius * .32f, 0xffff9bb1);
-        rect(canvas, PIVOT_X - radius * .5f, knobY - radius * .55f, PIVOT_X - radius * .5f + 1.5f, knobY - radius * .55f + 1.5f, CREAM);
+        fillPaint.setColor(0x50000000);
+        canvas.drawCircle(knobX + 1.5f, knobY + 2, radius, fillPaint);
+        drawSprite(canvas, knob, knobX, knobY, 2 * radius, 2 * radius, 255);
     }
 
-    /** CRT tube: scanlines on the board's pixel rows and a darkened rim. */
-    private void drawCrt(Canvas canvas) {
-        int width = getWidth();
-        int height = getHeight();
-        float pitch = 2 * scale;
-        float line = Math.max(1, .8f * scale);
-        float y = top + scale;
-        y -= (float) Math.ceil(y / pitch) * pitch;
-        for (; y < height; y += pitch) {
-            rect(canvas, 0, y, width, y + line, 0x1e000000);
-        }
-        float band = Math.min(width, height) * .025f;
-        for (int i = 0; i < 5; ++i) {
-            float inset = i * band;
-            rect(canvas, inset, inset, width - inset, inset + band, 0x14000000);
-            rect(canvas, inset, height - inset - band, width - inset, height - inset, 0x14000000);
-            rect(canvas, inset, inset + band, inset + band, height - inset - band, 0x14000000);
-            rect(canvas, width - inset - band, inset + band, width - inset, height - inset - band, 0x14000000);
-        }
-    }
-
-    private void outline(Canvas canvas, float l, float t, float r, float b, float w, int color) {
-        rect(canvas, l, t, r, t + w, color);
-        rect(canvas, l, b - w, r, b, color);
-        rect(canvas, l, t + w, l + w, b - w, color);
-        rect(canvas, r - w, t + w, r, b - w, color);
-    }
-
-    /** A circle built from one-pixel rows, like a sprite. */
-    private void circle(Canvas canvas, float cx, float cy, float radius, int color) {
-        for (float dy = -radius; dy < radius; dy += 1) {
-            float mid = Math.min(radius, Math.abs(dy + .5f));
-            float half = (float) Math.sqrt(radius * radius - mid * mid);
-            rect(canvas, cx - half, cy + dy, cx + half, cy + Math.min(radius, dy + 1), color);
-        }
-    }
-
-    private void rect(Canvas canvas, float left, float top, float right, float bottom, int color) {
-        blocks.setColor(color);
-        canvas.drawRect(left, top, right, bottom, blocks);
-    }
-
-    private void title(Canvas canvas, String text, float x, float y, float size, int color) {
-        letters.setColor(color);
-        letters.setTextSize(size);
-        canvas.drawText(text, x, y, letters);
+    private void drawSprite(Canvas canvas, Bitmap bitmap, float cx, float cy, float width, float height, int alpha) {
+        rect.set(cx - width / 2, cy - height / 2, cx + width / 2, cy + height / 2);
+        bitmapPaint.setAlpha(Math.max(0, Math.min(255, alpha)));
+        canvas.drawBitmap(bitmap, null, rect, bitmapPaint);
+        bitmapPaint.setAlpha(255);
     }
 
     // endregion
 
-    /** Chunky push button that sinks into its socket while pressed. */
+    /** Push button that sinks into its bezel while pressed. */
     private static final class ArcadeButton extends Button {
         float unit;
 
@@ -1169,41 +1057,57 @@ final class RetroSlotMachineView extends FrameLayout {
         @Override
         protected void drawableStateChanged() {
             super.drawableStateChanged();
-            setTranslationY(isPressed() ? 3 * unit : 0);
+            setTranslationY(isPressed() ? 1.5f * unit : 0);
         }
     }
 
+    /** Illuminated red push button that goes dark while the reels are busy. */
     private static final class ArcadeButtonFace extends Drawable {
-        private final Paint paint = new Paint();
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint gloss = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final RectF face = new RectF();
+        private Shader lit, pushed, dark;
         private boolean enabled = true;
         private boolean pressed;
         private boolean focused;
         float unit = 1;
 
         @Override
-        public void draw(Canvas canvas) {
-            Rect bounds = getBounds();
-            float l = bounds.left, t = bounds.top, r = bounds.right, b = bounds.bottom;
-            float u = unit;
-            int face = !enabled ? 0xff8e82a5 : pressed ? 0xfff0bb55 : GOLD;
-            int light = !enabled ? 0xffb2a8c4 : CREAM;
-            int dark = !enabled ? 0xff5f5476 : 0xffb5652f;
-            fill(canvas, l, t, r, b, INK);
-            fill(canvas, l + u, t + u, r - u, b - u, dark);
-            fill(canvas, l + u, t + u, r - u, b - (pressed ? 1.5f : 4) * u, face);
-            if (!pressed) {
-                fill(canvas, l + 2 * u, t + u, r - 2 * u, t + 2.5f * u, light);
-                fill(canvas, l + u, t + 2 * u, l + 2.5f * u, b - 5 * u, light);
-            }
-            if (focused) {
-                fill(canvas, l + 3 * u, t + 3.5f * u, r - 3 * u, t + 4.5f * u, MINT);
-                fill(canvas, l + 3 * u, b - 6 * u, r - 3 * u, b - 5 * u, MINT);
-            }
+        protected void onBoundsChange(Rect bounds) {
+            super.onBoundsChange(bounds);
+            float t = bounds.top, b = bounds.bottom;
+            lit = new LinearGradient(0, t, 0, b, new int[] {0xffff7a66, 0xffe5281e, 0xff9e0d0d}, new float[] {0, .45f, 1}, Shader.TileMode.CLAMP);
+            pushed = new LinearGradient(0, t, 0, b, new int[] {0xffd9473a, 0xffb81a12, 0xff7a0909}, new float[] {0, .45f, 1}, Shader.TileMode.CLAMP);
+            dark = new LinearGradient(0, t, 0, b, new int[] {0xff6e1d18, 0xff4a0d0a, 0xff2a0504}, new float[] {0, .45f, 1}, Shader.TileMode.CLAMP);
+            gloss.setShader(new LinearGradient(0, t, 0, t + (b - t) * .55f, 0x88ffffff, 0x00ffffff, Shader.TileMode.CLAMP));
         }
 
-        private void fill(Canvas canvas, float l, float t, float r, float b, int color) {
-            paint.setColor(color);
-            canvas.drawRect(l, t, r, b, paint);
+        @Override
+        public void draw(Canvas canvas) {
+            if (lit == null) return;
+            Rect bounds = getBounds();
+            float u = unit;
+            face.set(bounds);
+            paint.setShader(null);
+            paint.setColor(0xff2a0505);
+            canvas.drawRoundRect(face, 4 * u, 4 * u, paint);
+            face.inset(u, u);
+            paint.setShader(!enabled ? dark : pressed ? pushed : lit);
+            canvas.drawRoundRect(face, 3.5f * u, 3.5f * u, paint);
+            paint.setShader(null);
+            if (enabled && !pressed) {
+                face.set(bounds.left + 3 * u, bounds.top + 1.6f * u, bounds.right - 3 * u, bounds.top + bounds.height() * .5f);
+                canvas.drawRoundRect(face, 3 * u, 3 * u, gloss);
+            }
+            if (focused) {
+                face.set(bounds);
+                face.inset(2 * u, 2 * u);
+                paint.setStyle(Paint.Style.STROKE);
+                paint.setStrokeWidth(1.2f * u);
+                paint.setColor(AMBER);
+                canvas.drawRoundRect(face, 3 * u, 3 * u, paint);
+                paint.setStyle(Paint.Style.FILL);
+            }
         }
 
         @Override
@@ -1237,7 +1141,7 @@ final class RetroSlotMachineView extends FrameLayout {
 
         @Override
         public int getOpacity() {
-            return PixelFormat.OPAQUE;
+            return PixelFormat.TRANSLUCENT;
         }
     }
 }

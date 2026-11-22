@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="WhisperSlotArcade">8-BIT ARCADE</string>
-    <string name="WhisperSlotCoins">COINS</string>
-    <string name="WhisperSlotWin">LAST WIN</string>
+    <string name="WhisperSlotCoins">CREDITS</string>
+    <string name="WhisperSlotWin">PAID</string>
     <string name="WhisperSlotReady">READY</string>
     <string name="WhisperSlotRolling">SPINNING...</string>
     <string name="WhisperSlotJackpot">JACKPOT!</string>
@@ -11,7 +10,8 @@
     <string name="WhisperSlotMiss">TRY AGAIN</string>
     <string name="WhisperSlotSpin">SPIN · 1 COIN</string>
     <string name="WhisperSlotNewGame">NEW GAME</string>
-    <string name="WhisperSlotRules">THREE ALIKE PAY ABOVE · ANY PAIR PAYS 2</string>
-    <string name="WhisperSlotPull">PULL THE LEVER</string>
+    <string name="WhisperSlotRules">ANY PAIR</string>
+    <string name="WhisperSlotPaytable">WINNER PAID</string>
+    <string name="WhisperSlotPull">PULL THE HANDLE</string>
     <string name="WhisperSlotSummary">Coins: %1$d. Last win: %2$d. %3$s</string>
 </resources>
