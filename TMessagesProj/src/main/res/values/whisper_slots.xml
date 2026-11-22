@@ -11,6 +11,7 @@
     <string name="WhisperSlotMiss">TRY AGAIN</string>
     <string name="WhisperSlotSpin">SPIN · 1 COIN</string>
     <string name="WhisperSlotNewGame">NEW GAME</string>
-    <string name="WhisperSlotRules">MATCH 2 OR 3 SYMBOLS TO WIN</string>
+    <string name="WhisperSlotRules">THREE ALIKE PAY ABOVE · ANY PAIR PAYS 2</string>
+    <string name="WhisperSlotPull">PULL THE LEVER</string>
     <string name="WhisperSlotSummary">Coins: %1$d. Last win: %2$d. %3$s</string>
 </resources>
