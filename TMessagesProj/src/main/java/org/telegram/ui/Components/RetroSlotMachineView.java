@@ -7,25 +7,20 @@ import android.animation.ValueAnimator;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
-import android.graphics.ColorFilter;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
-import android.graphics.PixelFormat;
 import android.graphics.RadialGradient;
-import android.graphics.Rect;
 import android.graphics.RectF;
 import android.graphics.Shader;
-import android.graphics.drawable.Drawable;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.PowerManager;
 import android.os.SystemClock;
-import android.util.TypedValue;
 import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
-import android.widget.Button;
-import android.widget.FrameLayout;
+import android.view.accessibility.AccessibilityNodeInfo;
 
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
@@ -41,7 +36,7 @@ import java.util.Random;
  * Full-screen vintage slot machine shown while the local app lock is active. The cabinet
  * is drawn on a board of {@link RetroSlotArt#BOARD_WIDTH} units scaled to fit the screen.
  */
-final class RetroSlotMachineView extends FrameLayout {
+final class RetroSlotMachineView extends View {
     private static final int INITIAL_COINS = 20;
     private static final int MAX_COINS = 9999;
 
@@ -134,8 +129,6 @@ final class RetroSlotMachineView extends FrameLayout {
     private final Runnable unlock;
     private final Runnable unlockAfterCue = this::completeUnlock;
     private final Runnable frame = this::onFrame;
-    private final ArcadeButton spinButton;
-    private final ArcadeButtonFace buttonFace = new ArcadeButtonFace();
     private final int touchSlop;
     private final int[] result = new int[STRIPS.length];
 
@@ -184,8 +177,6 @@ final class RetroSlotMachineView extends FrameLayout {
     private boolean idleLights = true;
     private boolean frameScheduled;
     private long lastFrameAt;
-    private float downX, downY;
-    private boolean dragging;
     private float scale = 1, left, top;
 
     RetroSlotMachineView(Context context, Runnable unlock) {
@@ -211,19 +202,7 @@ final class RetroSlotMachineView extends FrameLayout {
                 new int[] {0xff4b4f57, 0xfff7f9fb, 0xffc5cad2, 0xff5c6069}, new float[] {0, .3f, .6f, 1}, Shader.TileMode.CLAMP));
         lipPaint.setShader(new LinearGradient(0, TRAY_FLOOR - 2, 0, TRAY_FLOOR + 7,
                 new int[] {0xfff7f9fb, 0xff9ea4ad, 0xffe3e6ea, 0xff5c6069}, new float[] {0, .35f, .6f, 1}, Shader.TileMode.CLAMP));
-        setWillNotDraw(false);
         setFilterTouchesWhenObscured(true);
-
-        spinButton = new ArcadeButton(context);
-        spinButton.setTypeface(CONDENSED);
-        spinButton.setLetterSpacing(.12f);
-        spinButton.setShadowLayer(2, 0, 1, 0xaa3a0000);
-        spinButton.setPadding(0, 0, 0, 0);
-        spinButton.setStateListAnimator(null);
-        spinButton.setSoundEffectsEnabled(false);
-        spinButton.setBackground(buttonFace);
-        spinButton.setOnClickListener(v -> play(false));
-        addView(spinButton, new LayoutParams(0, 0));
         updateDisplay();
     }
 
@@ -370,7 +349,7 @@ final class RetroSlotMachineView extends FrameLayout {
 
         long start = now;
         if (!fromLever) {
-            // The button pulls the lever for you; the reels start when it bottoms out.
+            // Pulled by an accessibility action: the reels start when the handle bottoms out.
             lever.autoPull(now);
             start += RetroSlotLever.AUTO_PULL_MS;
         }
@@ -526,12 +505,7 @@ final class RetroSlotMachineView extends FrameLayout {
     }
 
     private void updateDisplay() {
-        boolean enabled = active && !unlockPending && !spinning;
-        spinButton.setEnabled(enabled);
-        spinButton.setTextColor(enabled ? 0xfffff4e0 : 0xffb89a92);
-        int label = totalCoins() == 0 && !spinning ? R.string.WhisperSlotNewGame : R.string.WhisperSlotSpin;
-        spinButton.setText(label);
-        spinButton.setContentDescription(getResources().getString(label) + ". " + displaySummary());
+        setContentDescription(displaySummary());
         invalidate();
     }
 
@@ -602,17 +576,13 @@ final class RetroSlotMachineView extends FrameLayout {
         int completed = 0;
         switch (event.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
-                downX = event.getX();
-                downY = event.getY();
-                dragging = false;
-                gesture.begin(downX, downY, event.getEventTime());
+                gesture.begin(event.getX(), event.getY(), event.getEventTime());
                 break;
             case MotionEvent.ACTION_MOVE:
                 for (int i = 0; i < event.getHistorySize(); ++i) {
                     gesture.move(event.getHistoricalX(i), event.getHistoricalY(i));
                 }
                 gesture.move(event.getX(), event.getY());
-                dragging |= Math.abs(event.getX() - downX) > touchSlop || Math.abs(event.getY() - downY) > touchSlop;
                 break;
             case MotionEvent.ACTION_UP:
                 float minimumSpan = Math.max(dp(20), Math.min(getWidth(), getHeight()) * .075f);
@@ -620,7 +590,6 @@ final class RetroSlotMachineView extends FrameLayout {
                 break;
             case MotionEvent.ACTION_POINTER_DOWN:
             case MotionEvent.ACTION_CANCEL:
-                dragging = true;
                 gesture.reset();
                 break;
         }
@@ -657,12 +626,6 @@ final class RetroSlotMachineView extends FrameLayout {
             return;
         }
         performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
-    }
-
-    @Override
-    public boolean onInterceptTouchEvent(MotionEvent event) {
-        // A diagonal that starts over SPIN is a stroke, even if it ends on the button.
-        return dragging;
     }
 
     @Override
@@ -731,6 +694,25 @@ final class RetroSlotMachineView extends FrameLayout {
         invalidate();
     }
 
+    @Override
+    public void onInitializeAccessibilityNodeInfo(AccessibilityNodeInfo info) {
+        super.onInitializeAccessibilityNodeInfo(info);
+        if (active && !unlockPending && !spinning) {
+            info.addAction(new AccessibilityNodeInfo.AccessibilityAction(AccessibilityNodeInfo.ACTION_CLICK,
+                    getResources().getString(R.string.WhisperSlotPull)));
+        }
+    }
+
+    @Override
+    public boolean performAccessibilityAction(int action, Bundle arguments) {
+        if (action == AccessibilityNodeInfo.ACTION_CLICK) {
+            if (!active || unlockPending || spinning) return false;
+            play(false);
+            return true;
+        }
+        return super.performAccessibilityAction(action, arguments);
+    }
+
     private void releaseLever() {
         leverGrabbed = leverEngaged = false;
         lever.release();
@@ -756,18 +738,7 @@ final class RetroSlotMachineView extends FrameLayout {
         // Whole pixels keep the painted cabinet bitmap crisp.
         left = Math.round(insets.left + (spaceWidth - BOARD_WIDTH * scale) / 2);
         top = Math.round(insets.top + (spaceHeight - BOARD_HEIGHT * scale) / 2);
-        spinButton.unit = buttonFace.unit = scale;
-        spinButton.setTextSize(TypedValue.COMPLEX_UNIT_PX, 12.5f * scale);
-        spinButton.measure(MeasureSpec.makeMeasureSpec(Math.round(BUTTON_WIDTH * scale), MeasureSpec.EXACTLY),
-                MeasureSpec.makeMeasureSpec(Math.round(BUTTON_HEIGHT * scale), MeasureSpec.EXACTLY));
         setMeasuredDimension(width, height);
-    }
-
-    @Override
-    protected void onLayout(boolean changed, int l, int t, int r, int b) {
-        int x = Math.round(left + BUTTON_LEFT * scale);
-        int y = Math.round(top + BUTTON_TOP * scale);
-        spinButton.layout(x, y, x + spinButton.getMeasuredWidth(), y + spinButton.getMeasuredHeight());
     }
 
     // endregion
@@ -971,11 +942,16 @@ final class RetroSlotMachineView extends FrameLayout {
         int color = lastWin > 0 ? GOLD : message == R.string.WhisperSlotEmpty ? ROSE : AMBER;
         if (isShowingWin(now)) {
             if (lights && ((now - winAt) / BLINK_MS) % 2 == 1) return;
-        } else if (lights && !spinning && totalCoins() > 0 && (message == R.string.WhisperSlotReady
-                || message == R.string.WhisperSlotMiss || lastWin > 0)
-                && ((now - messageAt) / HINT_MS) % 2 == 1) {
-            text = R.string.WhisperSlotPull;
-            color = 0xffffe2b8;
+        } else if (!spinning) {
+            boolean hint = !lights || ((now - messageAt) / HINT_MS) % 2 == 1;
+            if (totalCoins() == 0) {
+                // Out of coins: the handle starts a new game.
+                if (hint) text = R.string.WhisperSlotNewGame;
+            } else if (lights && hint && (message == R.string.WhisperSlotReady
+                    || message == R.string.WhisperSlotMiss || lastWin > 0)) {
+                text = R.string.WhisperSlotPull;
+                color = 0xffffe2b8;
+            }
         }
         String string = getResources().getString(text);
         float maxWidth = MESSAGE_RIGHT - MESSAGE_LEFT - 9;
@@ -1045,103 +1021,4 @@ final class RetroSlotMachineView extends FrameLayout {
     }
 
     // endregion
-
-    /** Push button that sinks into its bezel while pressed. */
-    private static final class ArcadeButton extends Button {
-        float unit;
-
-        ArcadeButton(Context context) {
-            super(context);
-        }
-
-        @Override
-        protected void drawableStateChanged() {
-            super.drawableStateChanged();
-            setTranslationY(isPressed() ? 1.5f * unit : 0);
-        }
-    }
-
-    /** Illuminated red push button that goes dark while the reels are busy. */
-    private static final class ArcadeButtonFace extends Drawable {
-        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final Paint gloss = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final RectF face = new RectF();
-        private Shader lit, pushed, dark;
-        private boolean enabled = true;
-        private boolean pressed;
-        private boolean focused;
-        float unit = 1;
-
-        @Override
-        protected void onBoundsChange(Rect bounds) {
-            super.onBoundsChange(bounds);
-            float t = bounds.top, b = bounds.bottom;
-            lit = new LinearGradient(0, t, 0, b, new int[] {0xffff7a66, 0xffe5281e, 0xff9e0d0d}, new float[] {0, .45f, 1}, Shader.TileMode.CLAMP);
-            pushed = new LinearGradient(0, t, 0, b, new int[] {0xffd9473a, 0xffb81a12, 0xff7a0909}, new float[] {0, .45f, 1}, Shader.TileMode.CLAMP);
-            dark = new LinearGradient(0, t, 0, b, new int[] {0xff6e1d18, 0xff4a0d0a, 0xff2a0504}, new float[] {0, .45f, 1}, Shader.TileMode.CLAMP);
-            gloss.setShader(new LinearGradient(0, t, 0, t + (b - t) * .55f, 0x88ffffff, 0x00ffffff, Shader.TileMode.CLAMP));
-        }
-
-        @Override
-        public void draw(Canvas canvas) {
-            if (lit == null) return;
-            Rect bounds = getBounds();
-            float u = unit;
-            face.set(bounds);
-            paint.setShader(null);
-            paint.setColor(0xff2a0505);
-            canvas.drawRoundRect(face, 4 * u, 4 * u, paint);
-            face.inset(u, u);
-            paint.setShader(!enabled ? dark : pressed ? pushed : lit);
-            canvas.drawRoundRect(face, 3.5f * u, 3.5f * u, paint);
-            paint.setShader(null);
-            if (enabled && !pressed) {
-                face.set(bounds.left + 3 * u, bounds.top + 1.6f * u, bounds.right - 3 * u, bounds.top + bounds.height() * .5f);
-                canvas.drawRoundRect(face, 3 * u, 3 * u, gloss);
-            }
-            if (focused) {
-                face.set(bounds);
-                face.inset(2 * u, 2 * u);
-                paint.setStyle(Paint.Style.STROKE);
-                paint.setStrokeWidth(1.2f * u);
-                paint.setColor(AMBER);
-                canvas.drawRoundRect(face, 3 * u, 3 * u, paint);
-                paint.setStyle(Paint.Style.FILL);
-            }
-        }
-
-        @Override
-        protected boolean onStateChange(int[] state) {
-            boolean e = false, p = false, f = false;
-            for (int s : state) {
-                if (s == android.R.attr.state_enabled) e = true;
-                else if (s == android.R.attr.state_pressed) p = true;
-                else if (s == android.R.attr.state_focused) f = true;
-            }
-            if (e == enabled && p == pressed && f == focused) return false;
-            enabled = e;
-            pressed = p;
-            focused = f;
-            invalidateSelf();
-            return true;
-        }
-
-        @Override
-        public boolean isStateful() {
-            return true;
-        }
-
-        @Override
-        public void setAlpha(int alpha) {
-        }
-
-        @Override
-        public void setColorFilter(ColorFilter colorFilter) {
-        }
-
-        @Override
-        public int getOpacity() {
-            return PixelFormat.TRANSLUCENT;
-        }
-    }
 }

@@ -8,8 +8,7 @@
     <string name="WhisperSlotPair">NICE MATCH!</string>
     <string name="WhisperSlotEmpty">OUT OF COINS</string>
     <string name="WhisperSlotMiss">TRY AGAIN</string>
-    <string name="WhisperSlotSpin">SPIN · 1 COIN</string>
-    <string name="WhisperSlotNewGame">NEW GAME</string>
+    <string name="WhisperSlotNewGame">PULL FOR NEW GAME</string>
     <string name="WhisperSlotRules">ANY PAIR</string>
     <string name="WhisperSlotPaytable">WINNER PAID</string>
     <string name="WhisperSlotPull">PULL THE HANDLE</string>

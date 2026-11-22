@@ -22,7 +22,8 @@ import java.util.Random;
  */
 final class RetroSlotArt {
     static final int BOARD_WIDTH = 304;
-    static final int BOARD_HEIGHT = 432;
+    static final int BOARD_HEIGHT = 400;
+    private static final float FLOOR = BOARD_HEIGHT - 8;
 
     static final int CHERRY = 0, LEMON = 1, PLUM = 2, BELL = 3, BAR = 4, SEVEN = 5;
     static final int SYMBOL_COUNT = 6;
@@ -48,14 +49,9 @@ final class RetroSlotArt {
     static final float MESSAGE_LEFT = 92;
     static final float MESSAGE_RIGHT = 176;
 
-    static final float BUTTON_LEFT = 72;
-    static final float BUTTON_TOP = 341;
-    static final float BUTTON_WIDTH = 124;
-    static final float BUTTON_HEIGHT = 28;
-
     static final float TRAY_CENTER = 134;
-    static final float TRAY_TOP = 381;
-    static final float TRAY_FLOOR = 400;
+    static final float TRAY_TOP = 348;
+    static final float TRAY_FLOOR = 367;
 
     static final float PIVOT_X = 279;
     static final float PIVOT_Y = 252;
@@ -131,18 +127,18 @@ final class RetroSlotArt {
 
         // Shadow on the floor.
         c.save();
-        c.scale(1, .1f, 134, 424);
-        p.setShader(new RadialGradient(134, 424, 140, 0x99000000, 0, Shader.TileMode.CLAMP));
-        c.drawCircle(134, 424, 140, p);
+        c.scale(1, .1f, 134, FLOOR);
+        p.setShader(new RadialGradient(134, FLOOR, 140, 0x99000000, 0, Shader.TileMode.CLAMP));
+        c.drawCircle(134, FLOOR, 140, p);
         p.setShader(null);
         c.restore();
 
         // Walnut body behind the chrome front.
-        r.set(2, 28, 266, 424);
+        r.set(2, 28, 266, FLOOR);
         wood(c, p, path, r, 4, WALNUT, 11);
-        r.set(12, 18, 256, 418);
+        r.set(12, 18, 256, FLOOR - 6);
         chromeFrame(c, p, path, r, 8, 10);
-        r.set(20, 24, 248, 412);
+        r.set(20, 24, 248, FLOOR - 12);
         wood(c, p, path, r, 6, WALNUT_DARK, 23);
         stroke(c, p, r, 6, 1.2f, 0x66000000);
 
@@ -158,23 +154,18 @@ final class RetroSlotArt {
         paintMeters(c, p, r, resources);
         paintPayCard(c, p, path, r, resources);
 
-        // Ledge with the SPIN button socket.
+        // Chrome trim under the pay card.
         r.set(18, 332, 250, 337);
         chrome(c, p, r, 1, true);
-        r.set(BUTTON_LEFT - 3, BUTTON_TOP - 2, BUTTON_LEFT + BUTTON_WIDTH + 3, BUTTON_TOP + BUTTON_HEIGHT + 3);
-        chrome(c, p, r, 6, true);
-        r.inset(2, 1.5f);
-        p.setColor(0xff0c0806);
-        c.drawRoundRect(r, 4, 4, p);
 
         // Coin tray.
-        r.set(72, 375, 196, 411);
+        r.set(72, TRAY_TOP - 6, 196, TRAY_FLOOR + 11);
         chromeFrame(c, p, path, r, 4, 6);
-        r.set(76, 379, 192, 407);
+        r.set(76, TRAY_TOP - 2, 192, TRAY_FLOOR + 7);
         p.setColor(0xff050506);
         c.drawRoundRect(r, 3, 3, p);
-        r.set(80, TRAY_TOP, 188, 403);
-        p.setShader(new LinearGradient(0, TRAY_TOP, 0, 403, new int[] {0xff000000, 0xff0c0c0e, 0xff24262b},
+        r.set(80, TRAY_TOP, 188, TRAY_FLOOR + 3);
+        p.setShader(new LinearGradient(0, TRAY_TOP, 0, TRAY_FLOOR + 3, new int[] {0xff000000, 0xff0c0c0e, 0xff24262b},
                 new float[] {0, .55f, 1}, Shader.TileMode.CLAMP));
         c.drawRoundRect(r, 3, 3, p);
         p.setShader(null);
